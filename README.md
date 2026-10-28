@@ -1,36 +1,70 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Hotel Cloud HMS
 
-## Getting Started
+Single-hotel cloud management system (Phase 1) built with **Next.js** + **Supabase Free**.
 
-First, run the development server:
+Enter data once — bookings, payments, invoices, accounts, housekeeping and reports stay connected.
+
+## Setup
+
+### 1. Supabase project (Free)
+
+1. Create a project at [supabase.com](https://supabase.com).
+2. In **SQL Editor**, run in order:
+   - [`supabase/migrations/001_initial_schema.sql`](supabase/migrations/001_initial_schema.sql)
+   - [`supabase/migrations/002_storage_buckets.sql`](supabase/migrations/002_storage_buckets.sql)
+3. Copy **Project URL**, **anon key**, and **service_role key** from Project Settings → API.
+
+### 2. App env
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.local.example .env.local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Fill in the Supabase values.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 3. Seed 3 users
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+node --env-file=.env.local scripts/seed-users.mjs
+```
 
-## Learn More
+Default accounts (change passwords immediately):
 
-To learn more about Next.js, take a look at the following resources:
+| Role | Email | Password |
+|------|-------|----------|
+| Owner | owner@hotel.local | ChangeMe123! |
+| Manager | manager@hotel.local | ChangeMe123! |
+| Reception | reception@hotel.local | ChangeMe123! |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 4. Run
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm install
+npm run dev
+```
 
-## Deploy on Vercel
+Open [http://localhost:3000](http://localhost:3000).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Modules (implementation slices)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. Login, roles, settings  
+2. Rooms + guests  
+3. Bookings + calendar  
+4. Check-in / check-out + folio  
+5. Payments + refunds  
+6. GST / Non-GST invoices + print  
+7. Expenses + accounts + P&L  
+8. Housekeeping + maintenance  
+9. Dashboard + reports + audit  
+
+## Free tier reminders
+
+- **No automatic backups** on Free — export SQL periodically from the dashboard until you move to Pro (~$25/mo).
+- Projects **pause after 1 week of inactivity** on Free — daily hotel use avoids this.
+- File storage quota is **1 GB** (guest IDs + expense receipts).
+
+## Stack
+
+- Next.js App Router + TypeScript + Tailwind
+- Supabase Auth, Postgres (RLS), Storage
+- Roles via `app_metadata.role` (not editable `user_metadata`)

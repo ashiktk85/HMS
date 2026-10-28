@@ -1,0 +1,131 @@
+import Link from "next/link";
+import {
+  PageHeader,
+  Panel,
+  EmptyState,
+  StatusPill,
+  inputCls,
+  btnPrimary,
+  btnSoft,
+} from "@/components/ui";
+import { createClient } from "@/lib/supabase/server";
+import { formatDate, formatMoney, labelize, rel } from "@/lib/types";
+
+const statusTone = (s: string) =>
+  s === "issued" ? ("ok" as const) : s === "voided" ? ("danger" as const) : ("warn" as const);
+
+export default async function InvoicesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; type?: string; status?: string }>;
+}) {
+  const { q, type, status } = await searchParams;
+  const supabase = await createClient();
+
+  let query = supabase
+    .from("invoices")
+    .select("*, guests(full_name), bookings(booking_code)")
+    .order("issued_at", { ascending: false })
+    .limit(200);
+  if (type === "gst" || type === "non_gst") query = query.eq("invoice_type", type);
+  if (status && ["issued", "voided", "credited"].includes(status)) query = query.eq("status", status);
+  const term = (q || "").replace(/[,()%*\\]/g, " ").trim();
+  if (term) query = query.or(`invoice_number.ilike.%${term}%,billing_name.ilike.%${term}%`);
+
+  const { data: invoices } = await query;
+
+  const live = (invoices || []).filter((i) => i.status !== "voided");
+  const sum = (k: "taxable_value" | "total_amount") => live.reduce((s, i) => s + Number(i[k]), 0);
+  const tax = live.reduce((s, i) => s + Number(i.cgst_amount) + Number(i.sgst_amount) + Number(i.igst_amount), 0);
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Invoice register"
+        description="GST and non-GST invoices. Numbers run in sequence per financial year and are never reused."
+        actions={
+          <Link href="/invoices/new" className={btnPrimary}>
+            New invoice
+          </Link>
+        }
+      />
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Panel>
+          <p className="text-xs uppercase text-[var(--muted)]">Taxable value (shown, excl. voided)</p>
+          <p className="mt-1 text-xl font-semibold">{formatMoney(sum("taxable_value"))}</p>
+        </Panel>
+        <Panel>
+          <p className="text-xs uppercase text-[var(--muted)]">GST charged</p>
+          <p className="mt-1 text-xl font-semibold">{formatMoney(tax)}</p>
+        </Panel>
+        <Panel>
+          <p className="text-xs uppercase text-[var(--muted)]">Invoice total</p>
+          <p className="mt-1 text-xl font-semibold">{formatMoney(sum("total_amount"))}</p>
+        </Panel>
+      </div>
+
+      <Panel>
+        <form className="mb-4 flex flex-wrap gap-2">
+          <input name="q" defaultValue={q || ""} placeholder="Search invoice number or name" className={`${inputCls} !w-72`} />
+          <select name="type" defaultValue={type || ""} className={`${inputCls} !w-40`} aria-label="Invoice type">
+            <option value="">All types</option>
+            <option value="gst">GST</option>
+            <option value="non_gst">Non-GST</option>
+          </select>
+          <select name="status" defaultValue={status || ""} className={`${inputCls} !w-40`} aria-label="Status">
+            <option value="">All statuses</option>
+            <option value="issued">Issued</option>
+            <option value="credited">Credited</option>
+            <option value="voided">Voided</option>
+          </select>
+          <button type="submit" className={btnSoft}>Filter</button>
+        </form>
+
+        {!invoices?.length ? (
+          <EmptyState message={term || type || status ? "No invoices match." : "No invoices yet."} />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-[var(--muted)]">
+                <tr>
+                  <th className="py-2 font-medium">Invoice</th>
+                  <th className="font-medium">Billed to</th>
+                  <th className="font-medium">Booking</th>
+                  <th className="font-medium">Date</th>
+                  <th className="text-right font-medium">Taxable</th>
+                  <th className="text-right font-medium">GST</th>
+                  <th className="text-right font-medium">Total</th>
+                  <th className="font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {invoices.map((i) => (
+                  <tr key={i.id} className="border-t border-[var(--line)]">
+                    <td className="py-3">
+                      <Link href={`/invoices/${i.id}`} className="font-medium text-[var(--brand)] hover:underline">
+                        {i.invoice_number}
+                      </Link>
+                      <span className="block text-xs text-[var(--muted)]">{labelize(i.invoice_type)}</span>
+                    </td>
+                    <td>{i.billing_name ?? rel(i.guests as { full_name: string } | { full_name: string }[] | null)?.full_name}</td>
+                    <td>{rel(i.bookings as { booking_code: string } | { booking_code: string }[] | null)?.booking_code}</td>
+                    <td className="whitespace-nowrap">{formatDate(i.issued_at)}</td>
+                    <td className="text-right">{formatMoney(i.taxable_value)}</td>
+                    <td className="text-right">
+                      {formatMoney(Number(i.cgst_amount) + Number(i.sgst_amount) + Number(i.igst_amount))}
+                    </td>
+                    <td className="text-right font-medium">{formatMoney(i.total_amount)}</td>
+                    <td>
+                      <StatusPill tone={statusTone(i.status)}>{labelize(i.status)}</StatusPill>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
+    </div>
+  );
+}
