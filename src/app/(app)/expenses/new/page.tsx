@@ -3,9 +3,13 @@ import { PageHeader, Panel, EmptyState, Field, inputCls, btnPrimary } from "@/co
 import { ActionForm, SubmitButton } from "@/components/ActionForm";
 import { createClient } from "@/lib/supabase/server";
 import { todayLocal } from "@/lib/dates";
+import { getSessionProfile } from "@/lib/auth";
+import { canAccessSettings } from "@/lib/types";
 import { createExpense } from "../actions";
+import { CategoryField } from "./CategoryField";
 
 export default async function NewExpensePage() {
+  const session = await getSessionProfile();
   const supabase = await createClient();
   const [{ data: categories }, { data: methods }, { data: settings }] = await Promise.all([
     supabase.from("expense_categories").select("id, name").eq("is_active", true).order("name"),
@@ -30,14 +34,7 @@ export default async function NewExpensePage() {
           <EmptyState message="Expense categories and payment methods must be set up in Settings first." />
         ) : (
           <ActionForm action={createExpense} className="grid max-w-2xl gap-4 sm:grid-cols-2">
-            <Field label="Category">
-              <select name="category_id" required defaultValue="" className={inputCls}>
-                <option value="">Select category</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </Field>
+            <CategoryField categories={categories} canAdd={canAccessSettings(session?.role)} />
             <Field label="Amount (₹)">
               <input name="amount" type="number" min="0.01" step="0.01" required className={inputCls} />
             </Field>

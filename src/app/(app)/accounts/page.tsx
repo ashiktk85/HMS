@@ -1,7 +1,8 @@
 import { PageHeader, Panel, EmptyState, StatusPill, btnPrimary, btnSoft } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
 import { todayLocal } from "@/lib/dates";
-import { bookingTone, formatDate, formatMoney, labelize, rel } from "@/lib/types";
+import { DataTable } from "@/components/DataTable";
+import { bookingLabel, bookingTone, formatDate, formatMoney, rel } from "@/lib/types";
 import Link from "next/link";
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -121,42 +122,57 @@ export default async function AccountsPage({
         {!outstanding?.length ? (
           <EmptyState message="No outstanding balances." />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-[var(--muted)]">
-                <tr>
-                  <th className="py-2 font-medium">Booking</th>
-                  <th className="font-medium">Guest</th>
-                  <th className="font-medium">Status</th>
-                  <th className="text-right font-medium">Balance due</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {outstanding.map((b) => (
-                  <tr key={b.id} className="border-t border-[var(--line)]">
-                    <td className="py-2">
-                      <Link href={`/bookings/${b.id}`} className="font-medium text-[var(--brand)] hover:underline">
-                        {b.booking_code}
-                      </Link>
-                    </td>
-                    <td>
-                      {rel(b.guests as { full_name: string } | { full_name: string }[] | null)?.full_name}
-                    </td>
-                    <td>
-                      <StatusPill tone={bookingTone(b.status)}>{labelize(b.status)}</StatusPill>
-                    </td>
-                    <td className="text-right font-medium">{formatMoney(b.balance_due)}</td>
-                    <td className="text-right">
-                      <Link href={`/payments/new?booking_id=${b.id}`} className="text-xs font-medium text-[var(--brand)] hover:underline">
-                        Record payment
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            searchPlaceholder="Search booking or guest"
+            columns={[
+              { header: "Booking" },
+              { header: "Guest", maxWidth: "18rem" },
+              { header: "Status" },
+              { header: "Balance due", align: "right" },
+              { header: "", align: "right" },
+            ]}
+            filters={[
+              {
+                key: "status",
+                label: "All statuses",
+                options: [...new Set(outstanding.map((b) => b.status))].map((s) => ({ value: s, label: bookingLabel(s) })),
+              },
+            ]}
+            rows={outstanding.map((b) => {
+              const guest = rel(b.guests as { full_name: string } | { full_name: string }[] | null)?.full_name;
+              return {
+                key: b.id,
+                details: {
+                  title: b.booking_code,
+                  subtitle: `${guest ?? "Guest"} · ${bookingLabel(b.status)}`,
+                  fields: [
+                    { label: "Guest", value: guest },
+                    { label: "Status", value: bookingLabel(b.status) },
+                    { label: "Balance due", value: formatMoney(b.balance_due) },
+                  ],
+                  actions: (
+                    <>
+                      <Link href={`/payments/new?booking_id=${b.id}`} className={btnPrimary}>Record payment</Link>
+                      <Link href={`/bookings/${b.id}`} className={btnSoft}>Open booking</Link>
+                    </>
+                  ),
+                },
+                search: `${b.booking_code} ${guest ?? ""}`,
+                filter: { status: b.status },
+                cells: [
+                  <Link key="b" href={`/bookings/${b.id}`} className="font-medium text-[var(--brand)] hover:underline">
+                    {b.booking_code}
+                  </Link>,
+                  guest,
+                  <StatusPill key="s" tone={bookingTone(b.status)}>{bookingLabel(b.status)}</StatusPill>,
+                  <span key="d" className="font-medium">{formatMoney(b.balance_due)}</span>,
+                  <Link key="p" href={`/payments/new?booking_id=${b.id}`} className="text-xs font-medium text-[var(--brand)] hover:underline">
+                    Record payment
+                  </Link>,
+                ],
+              };
+            })}
+          />
         )}
       </Panel>
 
@@ -175,48 +191,69 @@ export default async function AccountsPage({
         {!txns?.length ? (
           <EmptyState message="No transactions yet." />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-[var(--muted)]">
-                <tr>
-                  <th className="py-2 font-medium">When</th>
-                  <th className="font-medium">Account</th>
-                  <th className="font-medium">Source</th>
-                  <th className="font-medium">Description</th>
-                  <th className="text-right font-medium">In</th>
-                  <th className="text-right font-medium">Out</th>
-                </tr>
-              </thead>
-              <tbody>
-                {txns.map((t) => (
-                  <tr key={t.id} className="border-t border-[var(--line)]">
-                    <td className="whitespace-nowrap py-2">{formatDate(t.created_at)}</td>
-                    <td>{rel(t.accounts as { name: string } | { name: string }[] | null)?.name}</td>
-                    <td>
-                      {SOURCE_LABEL[t.reference_type ?? ""] ?? t.reference_type}
-                      {t.reference_type === "payment" && t.reference_id ? (
-                        <Link href={`/payments/${t.reference_id}`} className="ml-1 text-[var(--brand)] hover:underline">
-                          view
-                        </Link>
-                      ) : null}
-                    </td>
-                    <td>
-                      {t.description}
-                      <span className="block text-xs text-[var(--muted)]">
-                        {rel(t.bookings as { booking_code: string } | { booking_code: string }[] | null)?.booking_code}
-                      </span>
-                    </td>
-                    <td className="text-right text-emerald-700">
-                      {t.txn_type === "credit" ? formatMoney(t.amount) : ""}
-                    </td>
-                    <td className="text-right text-rose-700">
-                      {t.txn_type === "debit" ? formatMoney(t.amount) : ""}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            searchPlaceholder="Search description, booking"
+            columns={[
+              { header: "When" },
+              { header: "Account" },
+              { header: "Source" },
+              { header: "Booking" },
+              { header: "Description", maxWidth: "22rem" },
+              { header: "In", align: "right" },
+              { header: "Out", align: "right" },
+            ]}
+            filters={[
+              {
+                key: "source",
+                label: "All sources",
+                options: [...new Set(txns.map((t) => t.reference_type ?? ""))]
+                  .filter(Boolean)
+                  .map((s) => ({ value: s, label: SOURCE_LABEL[s] ?? s })),
+              },
+            ]}
+            rows={txns.map((t) => {
+              const code = rel(t.bookings as { booking_code: string } | { booking_code: string }[] | null)?.booking_code;
+              const source = SOURCE_LABEL[t.reference_type ?? ""] ?? t.reference_type;
+              return {
+                key: t.id,
+                details: {
+                  title: `${t.txn_type === "credit" ? "Money in" : "Money out"} · ${formatMoney(t.amount)}`,
+                  subtitle: formatDate(t.created_at),
+                  fields: [
+                    { label: "Account", value: rel(t.accounts as { name: string } | { name: string }[] | null)?.name },
+                    { label: "Type", value: t.txn_type === "credit" ? "In (credit)" : "Out (debit)" },
+                    { label: "Amount", value: formatMoney(t.amount) },
+                    { label: "Source", value: source },
+                    { label: "Booking", value: code },
+                    { label: "When", value: formatDate(t.created_at) },
+                    { label: "Description", value: t.description, wide: true },
+                  ],
+                  actions:
+                    t.reference_type === "payment" && t.reference_id ? (
+                      <Link href={`/payments/${t.reference_id}`} className={btnPrimary}>Open payment</Link>
+                    ) : null,
+                },
+                search: `${t.description ?? ""} ${code ?? ""} ${source ?? ""}`,
+                filter: { source: t.reference_type ?? "" },
+                cells: [
+                  formatDate(t.created_at),
+                  rel(t.accounts as { name: string } | { name: string }[] | null)?.name,
+                  <span key="s">
+                    {source}
+                    {t.reference_type === "payment" && t.reference_id ? (
+                      <Link href={`/payments/${t.reference_id}`} className="ml-1 text-[var(--brand)] hover:underline">
+                        view
+                      </Link>
+                    ) : null}
+                  </span>,
+                  code ?? "—",
+                  t.description,
+                  t.txn_type === "credit" ? <span key="i" className="text-emerald-700">{formatMoney(t.amount)}</span> : "",
+                  t.txn_type === "debit" ? <span key="o" className="text-rose-700">{formatMoney(t.amount)}</span> : "",
+                ],
+              };
+            })}
+          />
         )}
       </Panel>
     </div>

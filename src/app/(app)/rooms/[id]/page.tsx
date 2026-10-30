@@ -14,7 +14,7 @@ import {
   ROOM_CATEGORIES,
   ROOM_CATEGORY_LABELS,
   formatMoney,
-  labelize,
+  roomLabel,
   rel,
   type RoomCategory,
 } from "@/lib/types";
@@ -64,7 +64,7 @@ export default async function RoomDetailPage({
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel>
           <div className="mb-4 flex items-center gap-3">
-            <StatusPill tone={roomStatusTone(room.status)}>{labelize(room.status)}</StatusPill>
+            <StatusPill tone={roomStatusTone(room.status)}>{roomLabel(room.status)}</StatusPill>
             {!room.is_active ? <StatusPill tone="danger">Inactive</StatusPill> : null}
           </div>
           <ActionForm action={updateRoom} className="grid gap-3 sm:grid-cols-2">
@@ -114,7 +114,7 @@ export default async function RoomDetailPage({
               {history.map((h) => (
                 <li key={h.id} className="flex items-start justify-between gap-3 py-2">
                   <span>
-                    {h.from_status ? labelize(h.from_status) : "Created"} → {labelize(h.to_status)}
+                    {h.from_status ? roomLabel(h.from_status) : "Created"} → {roomLabel(h.to_status)}
                     <span className="block text-xs text-[var(--muted)]">
                       {rel(h.profiles as { full_name: string } | null)?.full_name ?? "System"}
                     </span>

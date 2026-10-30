@@ -43,6 +43,49 @@ export function monthRange(month: string): { from: string; to: string } {
   return { from: `${month}-01`, to: `${next}-01` };
 }
 
+export type DateRange = { active: string; from: string; to: string; label: string };
+
+/**
+ * Turn ?range= (and ?from/?to for custom) into an inclusive date span in the hotel timezone.
+ * Unknown values fall back to `fallback`; "all" is only honoured when `allowAll` is set.
+ */
+export function resolveRange(
+  today: string,
+  sp: { range?: string; from?: string; to?: string },
+  opts: { fallback?: string; allowAll?: boolean; capAtToday?: boolean } = {},
+): DateRange {
+  const [y, m] = today.split("-").map(Number);
+  const monthStart = `${today.slice(0, 7)}-01`;
+  let active = sp.range ?? opts.fallback ?? "today";
+  let from = today;
+  let to = today;
+  if (active === "week") {
+    const dow = new Date(`${today}T00:00:00Z`).getUTCDay();
+    from = addDays(today, -((dow + 6) % 7)); // Monday
+    to = addDays(from, 6);
+  } else if (active === "month") {
+    from = monthStart;
+    to = addDays(monthRange(today.slice(0, 7)).to, -1);
+  } else if (active === "last_month") {
+    from = m === 1 ? `${y - 1}-12-01` : `${y}-${String(m - 1).padStart(2, "0")}-01`;
+    to = addDays(monthStart, -1);
+  } else if (active === "custom" && isDateString(sp.from) && isDateString(sp.to)) {
+    [from, to] = sp.from <= sp.to ? [sp.from, sp.to] : [sp.to, sp.from];
+  } else if (active === "all" && opts.allowAll) {
+    return { active, from: "", to: "", label: "All dates" };
+  } else {
+    active = "today";
+  }
+  // Reporting views count "this week/month so far"; booking views want the whole period.
+  if (opts.capAtToday && active !== "custom" && to > today) to = today;
+  const fmt = (d: string) =>
+    new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(
+      new Date(`${d}T00:00:00Z`),
+    );
+  const label = active === "today" ? "Today" : from === to ? fmt(from) : `${fmt(from)} – ${fmt(to)}`;
+  return { active, from, to, label };
+}
+
 export function isMonthString(value: string | null | undefined): value is string {
   return !!value && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
 }

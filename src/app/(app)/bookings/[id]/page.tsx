@@ -18,6 +18,7 @@ import {
   bookingTone,
   formatDate,
   formatMoney,
+  bookingLabel,
   labelize,
   rel,
   AC_LABELS,
@@ -192,7 +193,7 @@ export default async function BookingDetailPage({
         <Panel>
           <p className="text-xs uppercase tracking-wide text-[var(--muted)]">Status</p>
           <div className="mt-2">
-            <StatusPill tone={bookingTone(status)}>{labelize(status)}</StatusPill>
+            <StatusPill tone={bookingTone(status)}>{bookingLabel(status)}</StatusPill>
           </div>
         </Panel>
       </div>
@@ -376,7 +377,7 @@ export default async function BookingDetailPage({
                 [`Room (${booking.nights} night${booking.nights === 1 ? "" : "s"} × ${formatMoney(booking.room_rate)})`, Number(booking.room_rate) * Number(booking.nights)],
                 ["Extra bed", Number(booking.extra_bed_charge)],
                 ["Additional charges", Number(booking.additional_charges)],
-                ["Folio charges", Number(booking.folio_total)],
+                ["Room extra charges", Number(booking.folio_total)],
                 ["Discount", -Number(booking.discount_amount)],
                 ["GST on invoice", Number(booking.tax_total)],
                 ["Credit notes", -Number(booking.credited_total)],
@@ -425,7 +426,7 @@ export default async function BookingDetailPage({
               <Field label="Change status to">
                 <select name="status" required className={inputCls} defaultValue={nextStatuses[0]}>
                   {nextStatuses.map((s) => (
-                    <option key={s} value={s}>{labelize(s)}</option>
+                    <option key={s} value={s}>{bookingLabel(s)}</option>
                   ))}
                 </select>
               </Field>
@@ -452,7 +453,7 @@ export default async function BookingDetailPage({
             {(history || []).map((h) => (
               <li key={h.id} className="flex items-start justify-between gap-3 py-2">
                 <span>
-                  {h.from_status ? labelize(h.from_status) : "Created"} → {labelize(h.to_status)}
+                  {h.from_status ? bookingLabel(h.from_status) : "Created"} → {bookingLabel(h.to_status)}
                   <span className="block text-xs text-[var(--muted)]">
                     {rel(h.profiles as { full_name: string } | null)?.full_name ?? "System"}
                     {h.notes ? ` · ${h.notes}` : ""}
@@ -466,7 +467,7 @@ export default async function BookingDetailPage({
       </div>
 
       <Panel>
-        <h3 className="mb-3 font-semibold">Folio charges</h3>
+        <h3 className="mb-3 font-semibold">Room extra charges</h3>
         {activeInvoice ? (
           <p className="mb-3 rounded-xl bg-[var(--brand-tint)] px-3 py-2 text-sm text-[var(--brand)]">
             Charges are frozen because invoice {activeInvoice.invoice_number} has been issued. Void the invoice to change

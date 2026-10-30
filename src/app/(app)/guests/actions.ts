@@ -10,9 +10,14 @@ type Result = { ok: true } | { error: string };
 const MAX_DOC_BYTES = 5 * 1024 * 1024;
 const ALLOWED_DOC_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
 
-/** Mobiles are compared for duplicates, so store them without spaces/dashes. */
+/**
+ * Mobiles are compared for duplicates, so store them as the bare 10 digits
+ * (spaces, dashes and a +91 / 0 prefix are dropped).
+ */
 function normalizeMobile(value: FormDataEntryValue | null) {
-  const v = String(value || "").replace(/[\s\-().]/g, "");
+  let v = String(value || "").replace(/[\s\-().]/g, "");
+  if (/^\+?91\d{10}$/.test(v)) v = v.replace(/^\+?91/, "");
+  else if (/^0\d{10}$/.test(v)) v = v.slice(1);
   return v || null;
 }
 
@@ -41,6 +46,7 @@ function parseGuest(formData: FormData) {
 
 function validateGuest(p: ReturnType<typeof parseGuest>): string | null {
   if (!p.full_name) return "Name required";
+  if (p.mobile && !/^\d{10}$/.test(p.mobile)) return "Mobile number must be exactly 10 digits";
   if (p.email && !/^\S+@\S+\.\S+$/.test(p.email)) return "Email looks invalid";
   if (p.gstin && !/^[0-9A-Z]{15}$/.test(p.gstin)) {
     return "GSTIN must be 15 letters/digits";

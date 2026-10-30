@@ -13,7 +13,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 const SOURCES: BookingSource[] = ["direct", "walk_in", "phone", "whatsapp"];
-const CREATE_STATUSES: BookingStatus[] = ["enquiry", "hold", "confirmed"];
+const CREATE_STATUSES: BookingStatus[] = ["hold", "confirmed"];
 
 function money(formData: FormData, name: string) {
   return Math.round(Number(formData.get(name) || 0) * 100) / 100;
@@ -57,13 +57,35 @@ export async function createBooking(formData: FormData): Promise<{ error: string
   const gross = roomRate * diffDays(checkIn, checkOut) + extraBed + additional;
   if (discount > gross) return { error: "Discount is more than the booking total" };
 
+  // Optional advance, collected with the booking. Checked here so nothing is created if it can't be taken.
+  const advance = money(formData, "advance_amount");
+  const advanceMethodId = String(formData.get("advance_method_id") || "");
+  const advanceRef = String(formData.get("advance_reference") || "").trim();
+  if (!Number.isFinite(advance) || advance < 0) return { error: "Advance cannot be negative" };
+  if (advance > 0) {
+    if (advance > Math.round((gross - discount) * 100) / 100) {
+      return { error: "Advance is more than the booking total" };
+    }
+    if (!advanceMethodId) return { error: "Choose how the advance was paid" };
+    const { data: method } = await supabase
+      .from("payment_methods")
+      .select("name, requires_reference")
+      .eq("id", advanceMethodId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (!method) return { error: "Choose how the advance was paid" };
+    if (method.requires_reference && !advanceRef) {
+      return { error: `${method.name} payments need a transaction reference` };
+    }
+  }
+
   const { data: room } = await supabase
     .from("rooms")
     .select("status, is_active, room_number")
     .eq("id", roomId)
     .maybeSingle();
   if (!room || !room.is_active) return { error: "Room not found" };
-  if (["maintenance", "blocked"].includes(room.status) && status !== "enquiry") {
+  if (["maintenance", "blocked"].includes(room.status)) {
     return { error: `Room ${room.room_number} is ${room.status} and cannot be booked` };
   }
 
@@ -113,6 +135,26 @@ export async function createBooking(formData: FormData): Promise<{ error: string
   if (error) return { error: error.message };
 
   await writeAudit("create", "bookings", data.id, payload);
+
+  if (advance > 0) {
+    // Same database function as Payments, so the receipt, ledger and balance all update together.
+    // Receiving an advance also moves an on-hold booking to confirmed.
+    const { error: payErr } = await supabase.rpc("record_payment", {
+      p_booking_id: data.id,
+      p_amount: advance,
+      p_method_id: advanceMethodId,
+      p_reference: advanceRef || null,
+      p_notes: "Advance paid at booking",
+    });
+    if (payErr) {
+      revalidatePath("/bookings");
+      return {
+        error: `The booking was created, but the advance could not be recorded (${payErr.message}). Open the booking and record the payment there; do not create it again.`,
+      };
+    }
+  }
+
+  revalidatePath("/payments");
   revalidatePath("/bookings");
   revalidatePath("/bookings/calendar");
   redirect(`/bookings/${data.id}`);

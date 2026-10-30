@@ -10,6 +10,7 @@ import {
 } from "@/components/ui";
 import { ActionForm, SubmitButton } from "@/components/ActionForm";
 import { getSessionProfile } from "@/lib/auth";
+import { DataTable } from "@/components/DataTable";
 import { createClient } from "@/lib/supabase/server";
 import { addDays, isMonthString, monthLabel as labelForMonth, monthRange, todayLocal } from "@/lib/dates";
 import { expenseState, formatDate, formatMoney, labelize, rel } from "@/lib/types";
@@ -150,43 +151,58 @@ export default async function ExpensesPage({
           {!expenses?.length ? (
             <EmptyState message="No expenses in this month." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="text-[var(--muted)]">
-                  <tr>
-                    <th className="py-2 font-medium">Date</th>
-                    <th className="font-medium">Category</th>
-                    <th className="font-medium">Payee</th>
-                    <th className="font-medium">Paid by</th>
-                    <th className="text-right font-medium">Amount</th>
-                    <th className="font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {expenses.map((e) => {
-                    const st = expenseState(e);
-                    return (
-                      <tr key={e.id} className="border-t border-[var(--line)]">
-                        <td className="whitespace-nowrap py-3">
-                          <Link href={`/expenses/${e.id}`} className="font-medium text-[var(--brand)] hover:underline">
-                            {formatDate(e.expense_date)}
-                          </Link>
-                        </td>
-                        <td>{rel(e.expense_categories as { name: string } | null)?.name}</td>
-                        <td>{e.supplier || "—"}</td>
-                        <td>{e.payment_method}</td>
-                        <td className={`text-right ${e.reversed ? "text-[var(--muted)] line-through" : ""}`}>
-                          {formatMoney(e.amount)}
-                        </td>
-                        <td>
-                          <StatusPill tone={st.tone}>{labelize(st.label)}</StatusPill>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              searchPlaceholder="Search payee, category, method"
+              columns={[
+                { header: "Date" },
+                { header: "Category", maxWidth: "12rem" },
+                { header: "Payee", maxWidth: "14rem" },
+                { header: "Paid by" },
+                { header: "Amount", align: "right" },
+                { header: "Status" },
+              ]}
+              filters={[
+                {
+                  key: "status",
+                  label: "All statuses",
+                  options: [...new Set(expenses.map((e) => expenseState(e).label))].map((l) => ({ value: l, label: l })),
+                },
+              ]}
+              rows={expenses.map((e) => {
+                const st = expenseState(e);
+                const category = rel(e.expense_categories as { name: string } | null)?.name;
+                return {
+                  key: e.id,
+                  details: {
+                    title: `${formatMoney(e.amount)} · ${category ?? "Expense"}`,
+                    subtitle: `${formatDate(e.expense_date)} · ${st.label}`,
+                    fields: [
+                      { label: "Category", value: category },
+                      { label: "Amount", value: formatMoney(e.amount) },
+                      { label: "Date", value: formatDate(e.expense_date) },
+                      { label: "Status", value: st.label },
+                      { label: "Payee", value: e.supplier },
+                      { label: "Paid by", value: e.payment_method },
+                      { label: "Description", value: e.description, wide: true },
+                      ...(e.reversed ? [{ label: "Reversal reason", value: e.reverse_reason, wide: true }] : []),
+                    ],
+                    actions: <Link href={`/expenses/${e.id}`} className={btnPrimary}>Open expense</Link>,
+                  },
+                  search: [category, e.supplier, e.payment_method, e.description, st.label].filter(Boolean).join(" "),
+                  filter: { status: st.label },
+                  cells: [
+                    <Link key="d" href={`/expenses/${e.id}`} className="font-medium text-[var(--brand)] hover:underline">
+                      {formatDate(e.expense_date)}
+                    </Link>,
+                    category,
+                    e.supplier || "—",
+                    e.payment_method,
+                    <span key="a" className={e.reversed ? "text-[var(--muted)] line-through" : "font-medium"}>{formatMoney(e.amount)}</span>,
+                    <StatusPill key="s" tone={st.tone}>{labelize(st.label)}</StatusPill>,
+                  ],
+                };
+              })}
+            />
           )}
         </Panel>
       </div>

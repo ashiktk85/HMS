@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PageHeader, Panel, EmptyState, Field, inputCls, btnPrimary, btnSoft } from "@/components/ui";
+import { DataTable } from "@/components/DataTable";
 import { createClient } from "@/lib/supabase/server";
 import { isDateString } from "@/lib/dates";
 import { labelize, rel } from "@/lib/types";
@@ -31,6 +32,23 @@ function summarize(details: unknown): string {
     .filter(([, v]) => v !== null && v !== undefined && v !== "")
     .map(([k, v]) => `${k.replace(/_/g, " ")}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
     .join(" · ");
+}
+
+/** Every field of an audit entry's details, one per row; nested values are shown as formatted JSON. */
+function detailFields(details: unknown) {
+  if (!details || typeof details !== "object") return [];
+  return Object.entries(details as Record<string, unknown>)
+    .filter(([, v]) => v !== null && v !== undefined && v !== "")
+    .map(([k, v]) => ({
+      label: k.replace(/_/g, " "),
+      wide: typeof v === "object" || String(v).length > 40,
+      value:
+        typeof v === "object" ? (
+          <pre className="overflow-x-auto rounded-lg bg-stone-50 p-2 text-xs">{JSON.stringify(v, null, 2)}</pre>
+        ) : (
+          String(v)
+        ),
+    }));
 }
 
 export default async function AuditPage({
@@ -120,42 +138,60 @@ export default async function AuditPage({
           <p className="mb-3 text-sm text-[var(--muted)]">
             {count} entr{count === 1 ? "y" : "ies"} · page {page} of {pages}
           </p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-[var(--muted)]">
-                <tr>
-                  <th className="py-2 font-medium">When</th>
-                  <th className="font-medium">Who</th>
-                  <th className="font-medium">Action</th>
-                  <th className="font-medium">Record</th>
-                  <th className="font-medium">Details</th>
-                </tr>
-              </thead>
-              <tbody>
-                {logs.map((l) => {
-                  const base = ENTITY_LINK[l.entity_type];
-                  return (
-                    <tr key={l.id} className="border-t border-[var(--line)] align-top">
-                      <td className="whitespace-nowrap py-3 text-xs">{dateTime.format(new Date(l.created_at))}</td>
-                      <td>{rel(l.profiles as { full_name: string } | { full_name: string }[] | null)?.full_name || "System"}</td>
-                      <td className="whitespace-nowrap font-medium">{labelize(l.action)}</td>
-                      <td>
-                        {labelize(l.entity_type)}
-                        {base && l.entity_id ? (
-                          <Link href={`${base}/${l.entity_id}`} className="block text-xs font-medium text-[var(--brand)] hover:underline">
-                            Open
-                          </Link>
-                        ) : l.entity_id ? (
-                          <span className="block text-xs text-[var(--muted)]">{String(l.entity_id).slice(0, 8)}…</span>
-                        ) : null}
-                      </td>
-                      <td className="max-w-md break-words text-xs text-[var(--muted)]">{summarize(l.details)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            pageSize={PAGE}
+            serialStart={(page - 1) * PAGE}
+            searchPlaceholder="Search this page"
+            columns={[
+              { header: "When" },
+              { header: "Who" },
+              { header: "Action" },
+              { header: "Record" },
+              { header: "Open" },
+              { header: "Details", maxWidth: "32rem" },
+            ]}
+            rows={logs.map((l) => {
+              const base = ENTITY_LINK[l.entity_type];
+              const who = rel(l.profiles as { full_name: string } | { full_name: string }[] | null)?.full_name || "System";
+              const details = summarize(l.details);
+              return {
+                key: l.id,
+                details: {
+                  title: `${labelize(l.action)} · ${labelize(l.entity_type)}`,
+                  subtitle: `${who} · ${dateTime.format(new Date(l.created_at))}`,
+                  fields: [
+                    { label: "When (IST)", value: dateTime.format(new Date(l.created_at)) },
+                    { label: "Who", value: who },
+                    { label: "Action", value: labelize(l.action) },
+                    { label: "Area", value: labelize(l.entity_type) },
+                    { label: "Record ID", value: l.entity_id ? String(l.entity_id) : null, wide: true },
+                    ...detailFields(l.details),
+                  ],
+                  actions:
+                    base && l.entity_id ? (
+                      <Link href={`${base}/${l.entity_id}`} className={btnPrimary}>
+                        Open record
+                      </Link>
+                    ) : null,
+                },
+                search: `${who} ${labelize(l.action)} ${labelize(l.entity_type)} ${details}`,
+                cells: [
+                  dateTime.format(new Date(l.created_at)),
+                  who,
+                  <span key="a" className="font-medium">{labelize(l.action)}</span>,
+                  labelize(l.entity_type),
+                  base && l.entity_id ? (
+                    <Link key="o" href={`${base}/${l.entity_id}`} className="font-medium text-[var(--brand)] hover:underline">
+                      Open
+                    </Link>
+                  ) : (
+                    <span key="o" className="text-[var(--muted)]">—</span>
+                  ),
+                  <span key="d" title={details} className="block truncate text-[var(--muted)]">{details}</span>,
+                ],
+              };
+            })}
+          />
           <div className="mt-4 flex items-center gap-2">
             {page > 1 ? (
               <Link href={qs({ page: page - 1 })} className={btnSoft}>← Newer</Link>

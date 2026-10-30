@@ -19,23 +19,27 @@ function revalidateInvoicing(bookingId?: string) {
 export async function issueInvoice(formData: FormData): Promise<{ error: string }> {
   await requireUser();
   const supabase = await createClient();
-  const bookingId = String(formData.get("booking_id") || "");
+  // One or more bookings of the same guest; several are billed on a single invoice.
+  const bookingIds = [...new Set(formData.getAll("booking_id").map(String).filter(Boolean))];
   const type = String(formData.get("invoice_type") || "");
-  if (!bookingId) return { error: "Select a booking" };
+  if (!bookingIds.length) return { error: "Select a booking" };
   if (type !== "gst" && type !== "non_gst") return { error: "Choose GST or Non-GST invoice" };
 
-  const { data, error } = await supabase.rpc("issue_invoice", {
-    p_booking_id: bookingId,
+  const details = {
     p_type: type,
     p_inter: formData.get("inter_state") === "1",
     p_billing_name: String(formData.get("billing_name") || "").trim() || null,
     p_billing_gstin: String(formData.get("billing_gstin") || "").trim() || null,
     p_billing_address: String(formData.get("billing_address") || "").trim() || null,
     p_notes: String(formData.get("notes") || "").trim() || null,
-  });
+  };
+  const { data, error } =
+    bookingIds.length === 1
+      ? await supabase.rpc("issue_invoice", { p_booking_id: bookingIds[0], ...details })
+      : await supabase.rpc("issue_combined_invoice", { p_booking_ids: bookingIds, ...details });
   if (error) return { error: error.message };
 
-  revalidateInvoicing(bookingId);
+  bookingIds.forEach((id) => revalidateInvoicing(id));
   redirect(`/invoices/${data}`);
 }
 

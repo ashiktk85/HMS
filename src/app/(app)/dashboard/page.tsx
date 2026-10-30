@@ -1,35 +1,36 @@
 import Link from "next/link";
-import { PageHeader, Panel, EmptyState, StatusPill, btnPrimary, btnSoft } from "@/components/ui";
+import { PageHeader, Panel, EmptyState, StatusPill } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
-import { addDays, todayLocal } from "@/lib/dates";
+import { addDays, resolveRange, todayLocal } from "@/lib/dates";
 import { loadReport } from "@/lib/report";
 import { formatDate, formatMoney, labelize, rel } from "@/lib/types";
+import { QuickAction, RangeFilter, Stat } from "./parts";
 
 type Named = { full_name: string } | { full_name: string }[] | null;
 type Room = { room_number: string } | { room_number: string }[] | null;
 
-function Stat({ label, value, href, hint }: { label: string; value: string; href?: string; hint?: string }) {
-  const body = (
-    <Panel className={href ? "h-full transition hover:border-[var(--brand)]" : "h-full"}>
-      <p className="text-xs uppercase tracking-wide text-[var(--muted)]">{label}</p>
-      <p className="mt-1 text-2xl font-semibold">{value}</p>
-      {hint ? <p className="mt-1 text-xs text-[var(--muted)]">{hint}</p> : null}
-    </Panel>
-  );
-  return href ? <Link href={href}>{body}</Link> : body;
-}
-
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ range?: string; from?: string; to?: string }>;
+}) {
   const supabase = await createClient();
   const today = todayLocal();
-  const start = `${today}T00:00:00+05:30`;
-  const end = `${addDays(today, 1)}T00:00:00+05:30`;
+  const range = resolveRange(today, await searchParams, { capAtToday: true });
+  const isToday = range.active === "today";
+  const period = isToday ? "today" : range.label;
+  // Live "today" window (arrivals, departures) vs. the selected reporting window.
+  const todayStart = `${today}T00:00:00+05:30`;
+  const todayEnd = `${addDays(today, 1)}T00:00:00+05:30`;
+  const start = `${range.from}T00:00:00+05:30`;
+  const end = `${addDays(range.to, 1)}T00:00:00+05:30`;
 
   const [
     { data: rooms },
     { data: arrivals },
     { data: departures },
-    { count: inHouse },
+    { count: onHold },
+    { data: inHouse },
     { count: checkedInToday },
     { count: checkedOutToday },
     { data: payments },
@@ -57,9 +58,10 @@ export default async function DashboardPage() {
       .eq("check_out_date", today)
       .eq("status", "checked_in")
       .order("created_at"),
-    supabase.from("bookings").select("id", { count: "exact", head: true }).eq("status", "checked_in"),
-    supabase.from("check_ins").select("id", { count: "exact", head: true }).gte("checked_in_at", start).lt("checked_in_at", end),
-    supabase.from("check_outs").select("id", { count: "exact", head: true }).gte("checked_out_at", start).lt("checked_out_at", end),
+    supabase.from("bookings").select("id", { count: "exact", head: true }).eq("status", "hold"),
+    supabase.from("bookings").select("adults, children").eq("status", "checked_in"),
+    supabase.from("check_ins").select("id", { count: "exact", head: true }).gte("checked_in_at", todayStart).lt("checked_in_at", todayEnd),
+    supabase.from("check_outs").select("id", { count: "exact", head: true }).gte("checked_out_at", todayStart).lt("checked_out_at", todayEnd),
     supabase.from("payments").select("amount, method").eq("voided", false).gte("received_at", start).lt("received_at", end),
     supabase
       .from("refunds")
@@ -67,7 +69,7 @@ export default async function DashboardPage() {
       .eq("approval_status", "approved")
       .gte("decided_at", start)
       .lt("decided_at", end),
-    supabase.from("expenses").select("amount").eq("posted", true).eq("reversed", false).eq("expense_date", today),
+    supabase.from("expenses").select("amount").eq("posted", true).eq("reversed", false).gte("expense_date", range.from).lte("expense_date", range.to),
     supabase
       .from("bookings")
       .select("balance_due")
@@ -84,7 +86,7 @@ export default async function DashboardPage() {
     supabase.from("maintenance_requests").select("id", { count: "exact", head: true }).in("status", ["open", "in_progress"]),
     supabase.from("refunds").select("id", { count: "exact", head: true }).eq("approval_status", "pending"),
     supabase.from("expenses").select("id", { count: "exact", head: true }).eq("approval_status", "pending"),
-    loadReport(supabase, today, today),
+    loadReport(supabase, range.from, range.to),
   ]);
 
   const sum = <T,>(rows: T[] | null, f: (r: T) => number) => (rows || []).reduce((s, r) => s + f(r), 0);
@@ -100,36 +102,54 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Dashboard"
-        description={`${formatDate(today)} · live numbers for today`}
-        actions={
-          <>
-            <Link href="/bookings/new" className={btnPrimary}>
-              New booking
-            </Link>
-            <Link href="/payments/new" className={btnSoft}>
-              Record payment
-            </Link>
-            <Link href="/expenses/new" className={btnSoft}>
-              Add expense
-            </Link>
-          </>
-        }
-      />
+      <PageHeader title="Dashboard" description={`${formatDate(today)} · live status, plus figures for ${period}`} />
+
+      <section aria-label="Quick actions" className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+        <QuickAction href="/bookings/new" label="New booking" icon="plus" tone="green" />
+        <QuickAction href="/bookings?when=arriving" label="Check in" icon="checkin" tone="sky" />
+        <QuickAction href="/bookings?when=departing" label="Check out" icon="checkout" tone="orange" />
+        <QuickAction href="/payments/new" label="Record payment" icon="wallet" tone="violet" />
+        <QuickAction href="/expenses/new" label="Add expense" icon="receipt" tone="rose" />
+        <QuickAction href="/invoices/new" label="Create invoice" icon="invoice" tone="amber" />
+        <QuickAction href="/guests/new" label="New guest" icon="userPlus" tone="green" />
+        <QuickAction href="/reports" label="Reports" icon="chart" tone="sky" />
+      </section>
+
+      <RangeFilter basePath="/dashboard" active={range.active} from={range.from} to={range.to} />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Arriving today" value={String(arrivals?.length ?? 0)} href="/bookings?when=arriving" hint={`${checkedInToday ?? 0} checked in so far`} />
-        <Stat label="Departing today" value={String(departures?.length ?? 0)} href="/bookings?when=departing" hint={`${checkedOutToday ?? 0} checked out so far`} />
-        <Stat label="In-house guests" value={String(inHouse ?? 0)} href="/bookings?status=checked_in" />
-        <Stat label="Occupancy" value={`${occupied} / ${totalRooms}`} href="/rooms" hint={`${count("available")} available · ${count("dirty") + count("cleaning") + count("inspection")} being cleaned · ${count("maintenance") + count("blocked")} out of service`} />
+        <Stat
+          label="On hold"
+          value={String(onHold ?? 0)}
+          icon="clock"
+          tone="rose"
+          href="/bookings?status=hold"
+          hint={`${arrivals?.length ?? 0} arriving today · ${checkedInToday ?? 0} checked in so far`}
+        />
+        <Stat label="Departing today" value={String(departures?.length ?? 0)} icon="checkout" tone="orange" href="/bookings?when=departing" hint={`${checkedOutToday ?? 0} checked out so far`} />
+        <Stat
+          label="Total guests"
+          value={String(sum(inHouse, (b) => b.adults + b.children))}
+          icon="users"
+          tone="sky"
+          href="/bookings?status=checked_in"
+          hint={`${inHouse?.length ?? 0} booking${inHouse?.length === 1 ? "" : "s"} checked in`}
+        />
+        <Stat
+          label="Rooms available"
+          value={`${count("available")} / ${totalRooms}`}
+          icon="bed"
+          tone="green"
+          href="/rooms"
+          hint={`${occupied} occupied · ${count("dirty") + count("cleaning") + count("inspection")} being cleaned · ${count("maintenance") + count("blocked")} out of service`}
+        />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Bookings made today" value={String(created?.length ?? 0)} hint={`${formatMoney(sum(created, (b) => Number(b.total_amount)))} total value`} />
-        <Stat label="Room revenue today" value={report ? formatMoney(report.room_revenue) : "—"} hint={report ? `Occupancy ${report.occupancy_pct ?? 0}%` : undefined} />
-        <Stat label="Payments received" value={formatMoney(received)} hint={refunded ? `${formatMoney(refunded)} refunded` : undefined} href="/payments" />
-        <Stat label="Expenses today" value={formatMoney(sum(expenses, (e) => Number(e.amount)))} href="/expenses" />
+        <Stat label={`Bookings made${isToday ? " today" : ""}`} value={String(created?.length ?? 0)} icon="calendar" tone="violet" hint={`${formatMoney(sum(created, (b) => Number(b.total_amount)))} total value`} />
+        <Stat label="Room revenue" value={report ? formatMoney(report.room_revenue) : "—"} icon="trend" tone="green" hint={report ? `Occupancy ${report.occupancy_pct ?? 0}% · ${period}` : undefined} />
+        <Stat label="Payments received" value={formatMoney(received)} icon="wallet" tone="sky" hint={refunded ? `${formatMoney(refunded)} refunded` : period} href="/payments" />
+        <Stat label="Expenses" value={formatMoney(sum(expenses, (e) => Number(e.amount)))} icon="arrowDown" tone="rose" hint={period} href="/expenses" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -203,7 +223,7 @@ export default async function DashboardPage() {
         </Panel>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4">
         <Panel>
           <h3 className="mb-3 font-semibold">Account balances</h3>
           <ul className="divide-y divide-[var(--line)] text-sm">
@@ -214,9 +234,9 @@ export default async function DashboardPage() {
               </li>
             ))}
           </ul>
-          <h4 className="mb-2 mt-4 text-xs uppercase text-[var(--muted)]">Received today by method</h4>
+          <h4 className="mb-2 mt-4 text-xs uppercase text-[var(--muted)]">Received {period} by method</h4>
           {methods.size === 0 ? (
-            <p className="text-sm text-[var(--muted)]">No payments yet today.</p>
+            <p className="text-sm text-[var(--muted)]">No payments {isToday ? "yet today" : `for ${period}`}.</p>
           ) : (
             <ul className="space-y-1 text-sm">
               {[...methods.entries()].map(([m, amt]) => (
@@ -227,30 +247,6 @@ export default async function DashboardPage() {
               ))}
             </ul>
           )}
-        </Panel>
-
-        <Panel>
-          <h3 className="mb-3 font-semibold">Quick actions</h3>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            {[
-              ["/bookings/new", "New booking"],
-              ["/bookings?when=arriving", "Check in a guest"],
-              ["/bookings?when=departing", "Check out a guest"],
-              ["/payments/new", "Record payment"],
-              ["/expenses/new", "Add expense"],
-              ["/invoices/new", "Create invoice"],
-              ["/guests/new", "New guest"],
-              ["/reports", "Reports"],
-            ].map(([href, label]) => (
-              <Link
-                key={href}
-                href={href}
-                className="rounded-xl border border-[var(--line)] bg-[var(--brand-tint)] px-3 py-3 text-center font-medium text-[var(--brand)] transition hover:bg-[var(--brand)] hover:text-white"
-              >
-                {label}
-              </Link>
-            ))}
-          </div>
         </Panel>
       </div>
     </div>

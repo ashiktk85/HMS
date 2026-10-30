@@ -2,7 +2,7 @@ import Link from "next/link";
 import { PageHeader, Panel, EmptyState, btnPrimary, btnSoft } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
 import { addDays, dayLabel, diffDays, isDateString, todayLocal } from "@/lib/dates";
-import { ROOM_CATEGORY_LABELS, labelize, type RoomCategory } from "@/lib/types";
+import { ROOM_CATEGORY_LABELS, bookingLabel, type RoomCategory } from "@/lib/types";
 
 const DAYS = 14;
 
@@ -20,9 +20,9 @@ type Cell = {
 const PRIORITY: Record<string, number> = { checked_in: 4, confirmed: 3, hold: 2, checked_out: 1 };
 
 const STATUS_STYLE: Record<string, string> = {
-  checked_in: "bg-[var(--brand)] text-white",
-  confirmed: "bg-[var(--brand-soft)] text-[var(--brand)]",
-  hold: "bg-sky-100 text-sky-800",
+  checked_in: "bg-sky-500 text-white",
+  confirmed: "bg-violet-100 text-violet-800",
+  hold: "bg-rose-100 text-rose-800",
   checked_out: "bg-stone-200 text-stone-600",
 };
 
@@ -127,7 +127,7 @@ export default async function BookingCalendarPage({
           {Object.keys(STATUS_STYLE).map((s) => (
             <span key={s} className="flex items-center gap-1">
               <span className={`inline-block h-3 w-3 rounded ${STATUS_STYLE[s]}`} />
-              {labelize(s)}
+              {bookingLabel(s)}
             </span>
           ))}
         </span>
@@ -172,7 +172,7 @@ export default async function BookingCalendarPage({
                         </Link>
                         <span className="block truncate text-[10px] text-[var(--muted)]">
                           {typeName}
-                          {blockedNow ? ` · ${room.status}` : ""}
+                          {blockedNow ? <span className="font-medium text-orange-600"> · {room.status}</span> : null}
                         </span>
                       </td>
                       {rowCells(room.id).map((c) =>
@@ -180,7 +180,7 @@ export default async function BookingCalendarPage({
                           <td key={c.from} colSpan={c.span} className="p-0.5">
                             <Link
                               href={`/bookings/${c.booking.id}`}
-                              title={`${c.booking.code} · ${c.booking.guest} · ${c.booking.check_in_date} → ${c.booking.check_out_date} · ${labelize(c.booking.status)}`}
+                              title={`${c.booking.code} · ${c.booking.guest} · ${c.booking.check_in_date} → ${c.booking.check_out_date} · ${bookingLabel(c.booking.status)}`}
                               className={`block truncate rounded-lg px-2 py-2 font-medium ${STATUS_STYLE[c.booking.status] ?? "bg-stone-100"}`}
                             >
                               {c.booking.guest}
@@ -193,7 +193,7 @@ export default async function BookingCalendarPage({
                           >
                             {blockedNow || c.from < today ? (
                               <span
-                                className={`block rounded-lg py-2 text-center ${blockedNow ? "bg-rose-50 text-rose-700" : ""}`}
+                                className={`block rounded-lg py-2 text-center ${blockedNow ? "bg-orange-50 text-orange-600" : ""}`}
                               >
                                 {blockedNow ? "—" : ""}
                               </span>
@@ -218,7 +218,7 @@ export default async function BookingCalendarPage({
         </Panel>
       )}
       <p className="text-xs text-[var(--muted)]">
-        Enquiries, cancelled and no-show bookings do not block a room, so they are not drawn here.
+        Cancelled and no-show bookings do not block a room, so they are not drawn here.
         {diffDays(start, today) > 0 ? " Viewing past dates." : ""}
       </p>
     </div>

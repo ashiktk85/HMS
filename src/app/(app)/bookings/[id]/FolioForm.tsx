@@ -20,6 +20,7 @@ export function FolioForm({
   return (
     <ActionForm
       action={action}
+      resetOnSuccess
       successMessage="Charge added"
       className="mb-4 grid gap-3 md:grid-cols-4"
       onSuccess={() => {

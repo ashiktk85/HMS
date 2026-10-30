@@ -12,6 +12,7 @@ import {
 import { ActionForm, SubmitButton } from "@/components/ActionForm";
 import { createClient } from "@/lib/supabase/server";
 import { todayLocal } from "@/lib/dates";
+import { DataTable } from "@/components/DataTable";
 import { BLOCKING_BOOKING_STATUSES, formatDate, formatMoney, labelize, rel } from "@/lib/types";
 import { advanceMaintenance, reportMaintenance } from "../housekeeping/actions";
 
@@ -233,47 +234,65 @@ export default async function MaintenancePage() {
         {!closed?.length ? (
           <EmptyState message="Nothing closed yet." />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-[var(--muted)]">
-                <tr>
-                  <th className="py-2 font-medium">Issue</th>
-                  <th className="font-medium">Room</th>
-                  <th className="font-medium">Closed</th>
-                  <th className="font-medium">Status</th>
-                  <th className="text-right font-medium">Cost</th>
-                  <th className="font-medium">Expense</th>
-                </tr>
-              </thead>
-              <tbody>
-                {closed.map((m) => (
-                  <tr key={m.id} className="border-t border-[var(--line)]">
-                    <td className="py-2">
-                      {m.title}
-                      {m.resolution_note ? (
-                        <span className="block text-xs text-[var(--muted)]">{m.resolution_note}</span>
-                      ) : null}
-                    </td>
-                    <td>{rel(m.rooms as { room_number: string } | null)?.room_number ?? "—"}</td>
-                    <td className="whitespace-nowrap">{formatDate(m.completed_at)}</td>
-                    <td>
-                      <StatusPill tone={statusTone(m.status)}>{labelize(m.status)}</StatusPill>
-                    </td>
-                    <td className="text-right">{formatMoney(m.cost)}</td>
-                    <td>
-                      {m.expense_id ? (
-                        <Link href={`/expenses/${m.expense_id}`} className="text-xs font-medium text-[var(--brand)] hover:underline">
-                          View expense
-                        </Link>
-                      ) : (
-                        <span className="text-xs text-[var(--muted)]">Not recorded</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            searchPlaceholder="Search issue or room"
+            columns={[
+              { header: "Issue", maxWidth: "18rem" },
+              { header: "Note", maxWidth: "20rem" },
+              { header: "Room" },
+              { header: "Closed" },
+              { header: "Status" },
+              { header: "Cost", align: "right" },
+              { header: "Expense" },
+            ]}
+            filters={[
+              {
+                key: "status",
+                label: "All statuses",
+                options: [...new Set(closed.map((m) => m.status))].map((s) => ({ value: s, label: labelize(s) })),
+              },
+            ]}
+            rows={closed.map((m) => {
+              const room = rel(m.rooms as { room_number: string } | null)?.room_number;
+              return {
+                key: m.id,
+                details: {
+                  title: m.title,
+                  subtitle: `${room ? `Room ${room}` : "Common area"} · ${labelize(m.status)}`,
+                  fields: [
+                    { label: "Room", value: room ?? "Common area" },
+                    { label: "Status", value: labelize(m.status) },
+                    { label: "Priority", value: labelize(m.priority ?? "") },
+                    { label: "Closed", value: formatDate(m.completed_at) },
+                    { label: "Cost", value: formatMoney(m.cost) },
+                    { label: "Room was blocked", value: m.block_room ? "Yes" : "No" },
+                    { label: "Description", value: m.description, wide: true },
+                    { label: "Resolution", value: m.resolution_note, wide: true },
+                  ],
+                  actions: m.expense_id ? (
+                    <Link href={`/expenses/${m.expense_id}`} className={btnPrimary}>View expense</Link>
+                  ) : null,
+                },
+                search: `${m.title} ${m.resolution_note ?? ""} ${room ?? ""}`,
+                filter: { status: m.status },
+                cells: [
+                  m.title,
+                  <span key="n" className="text-[var(--muted)]">{m.resolution_note || "—"}</span>,
+                  room ?? "—",
+                  formatDate(m.completed_at),
+                  <StatusPill key="s" tone={statusTone(m.status)}>{labelize(m.status)}</StatusPill>,
+                  formatMoney(m.cost),
+                  m.expense_id ? (
+                    <Link key="e" href={`/expenses/${m.expense_id}`} className="text-xs font-medium text-[var(--brand)] hover:underline">
+                      View expense
+                    </Link>
+                  ) : (
+                    <span key="e" className="text-xs text-[var(--muted)]">Not recorded</span>
+                  ),
+                ],
+              };
+            })}
+          />
         )}
       </Panel>
     </div>

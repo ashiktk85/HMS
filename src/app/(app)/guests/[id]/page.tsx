@@ -8,10 +8,13 @@ import {
   inputCls,
   btnPrimary,
   btnSoft,
+  mobileProps,
 } from "@/components/ui";
 import { ActionForm, SubmitButton } from "@/components/ActionForm";
+import { DocumentUpload } from "./DocumentUpload";
+import { DataTable } from "@/components/DataTable";
 import { createClient } from "@/lib/supabase/server";
-import { formatDate, formatMoney, labelize, rel } from "@/lib/types";
+import { bookingLabel, formatDate, formatMoney, rel } from "@/lib/types";
 import { notFound } from "next/navigation";
 import { updateGuest, uploadGuestDocument } from "../actions";
 
@@ -148,6 +151,7 @@ export default async function GuestDetailPage({
                     required={name === "full_name"}
                     defaultValue={value ?? ""}
                     className={`${inputCls} mt-1`}
+                    {...(name === "mobile" ? mobileProps : {})}
                   />
                 </label>
               ))}
@@ -161,38 +165,41 @@ export default async function GuestDetailPage({
 
           <Panel>
             <h3 className="mb-3 font-semibold">ID documents</h3>
-            <ActionForm
-              action={upload}
-              resetOnSuccess
-              successMessage="Document uploaded"
-              className="mb-4 flex flex-wrap items-center gap-2"
-            >
-              <input
-                type="file"
-                name="file"
-                required
-                accept="application/pdf,image/jpeg,image/png,image/webp"
-                className="text-sm"
-              />
-              <SubmitButton className={btnSoft} pendingLabel="Uploading…">Upload</SubmitButton>
-            </ActionForm>
-            <p className="-mt-2 mb-3 text-xs text-[var(--muted)]">PDF, JPG, PNG or WebP, up to 5 MB.</p>
+            <DocumentUpload action={upload} />
             {!docs?.length ? (
-              <EmptyState message="No documents uploaded." />
+              <p className="mt-4 text-sm text-[var(--muted)]">No documents uploaded yet.</p>
             ) : (
-              <ul className="divide-y divide-[var(--line)] text-sm">
+              <ul className="mt-4 grid gap-2 sm:grid-cols-2">
                 {docs.map((d) => {
                   const url = urlByPath.get(d.file_path);
+                  const isPdf = d.mime_type === "application/pdf";
+                  const body = (
+                    <>
+                      <span
+                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold ${
+                          isPdf ? "bg-rose-50 text-rose-700" : "bg-sky-50 text-sky-700"
+                        }`}
+                      >
+                        {isPdf ? "PDF" : "IMG"}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{d.file_name}</span>
+                        <span className="block text-xs text-[var(--muted)]">Uploaded {formatDate(d.created_at)}</span>
+                      </span>
+                      {url ? <span className="text-xs font-medium text-[var(--brand)]">View</span> : null}
+                    </>
+                  );
+                  const cls =
+                    "flex items-center gap-3 rounded-xl border border-[var(--line)] bg-[var(--panel)] p-3 transition";
                   return (
-                    <li key={d.id} className="flex items-center justify-between gap-3 py-2">
+                    <li key={d.id}>
                       {url ? (
-                        <a href={url} target="_blank" rel="noreferrer" className="truncate font-medium text-[var(--brand)] hover:underline">
-                          {d.file_name}
+                        <a href={url} target="_blank" rel="noreferrer" className={`${cls} hover:border-[var(--brand)] hover:shadow-sm`}>
+                          {body}
                         </a>
                       ) : (
-                        <span className="truncate">{d.file_name}</span>
+                        <div className={cls}>{body}</div>
                       )}
-                      <span className="shrink-0 text-xs text-[var(--muted)]">{formatDate(d.created_at)}</span>
                     </li>
                   );
                 })}
@@ -207,38 +214,34 @@ export default async function GuestDetailPage({
         {!bookings?.length ? (
           <EmptyState message="No bookings yet for this guest." />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-[var(--muted)]">
-                <tr>
-                  <th className="py-2 font-medium">Code</th>
-                  <th className="font-medium">Room</th>
-                  <th className="font-medium">Dates</th>
-                  <th className="font-medium">Status</th>
-                  <th className="font-medium">Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bookings.map((b) => (
-                  <tr key={b.id} className="border-t border-[var(--line)]">
-                    <td className="py-2">
-                      <Link href={`/bookings/${b.id}`} className="font-medium text-[var(--brand)] hover:underline">
-                        {b.booking_code}
-                      </Link>
-                    </td>
-                    <td>{rel(b.rooms as { room_number: string } | null)?.room_number}</td>
-                    <td>
-                      {formatDate(b.check_in_date)} → {formatDate(b.check_out_date)}
-                    </td>
-                    <td>
-                      <StatusPill>{labelize(b.status)}</StatusPill>
-                    </td>
-                    <td>{formatMoney(b.balance_due)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            searchable={bookings.length > 8}
+            columns={[
+              { header: "Code" },
+              { header: "Room" },
+              { header: "Check-in" },
+              { header: "Check-out" },
+              { header: "Status" },
+              { header: "Balance", align: "right" },
+            ]}
+            rows={bookings.map((b) => {
+              const room = rel(b.rooms as { room_number: string } | null)?.room_number;
+              return {
+                key: b.id,
+                search: `${b.booking_code} ${room ?? ""} ${bookingLabel(b.status)}`,
+                cells: [
+                  <Link key="c" href={`/bookings/${b.id}`} className="font-medium text-[var(--brand)] hover:underline">
+                    {b.booking_code}
+                  </Link>,
+                  room,
+                  formatDate(b.check_in_date),
+                  formatDate(b.check_out_date),
+                  <StatusPill key="s">{bookingLabel(b.status)}</StatusPill>,
+                  formatMoney(b.balance_due),
+                ],
+              };
+            })}
+          />
         )}
       </Panel>
     </div>

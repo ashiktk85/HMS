@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PageHeader, Panel, EmptyState, Field, inputCls, btnPrimary, btnSoft } from "@/components/ui";
+import { DataTable } from "@/components/DataTable";
 import { createClient } from "@/lib/supabase/server";
 import { addDays, isDateString, monthRange, todayLocal } from "@/lib/dates";
 import { loadReport } from "@/lib/report";
@@ -31,30 +32,12 @@ function Table({
 }) {
   if (!rows.length) return <EmptyState message={empty} />;
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm">
-        <thead className="text-[var(--muted)]">
-          <tr>
-            {head.map((h, i) => (
-              <th key={h} className={`py-2 font-medium ${right.includes(i) ? "text-right" : ""}`}>
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i} className="border-t border-[var(--line)]">
-              {r.map((c, j) => (
-                <td key={j} className={`py-2 ${right.includes(j) ? "text-right" : ""}`}>
-                  {c}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <DataTable
+      searchable={rows.length > 8}
+      pageSize={15}
+      columns={head.map((h, i) => ({ header: h, align: right.includes(i) ? ("right" as const) : ("left" as const) }))}
+      rows={rows.map((r, i) => ({ key: String(i), cells: r, search: r.join(" ") }))}
+    />
   );
 }
 

@@ -10,6 +10,7 @@ import {
   btnSoft,
 } from "@/components/ui";
 import { ActionForm, SubmitButton } from "@/components/ActionForm";
+import { DataTable } from "@/components/DataTable";
 import { getSessionProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate, formatMoney, labelize, rel } from "@/lib/types";
@@ -36,18 +37,31 @@ export default async function InvoiceDetailPage({
     .maybeSingle();
   if (!invoice) notFound();
 
-  const [{ data: items }, { data: taxes }, { data: credits }] = await Promise.all([
+  type BookingRef = { id: string; booking_code: string; total_amount: number; amount_paid: number; balance_due: number };
+  const [{ data: items }, { data: taxes }, { data: credits }, { data: links }] = await Promise.all([
     supabase.from("invoice_items").select("*").eq("invoice_id", id),
     supabase.from("tax_details").select("*").eq("invoice_id", id).order("tax_name"),
     supabase.from("credit_notes").select("*").eq("invoice_id", id).order("created_at"),
+    // Every booking billed on this invoice (more than one when a guest's rooms are billed together).
+    supabase
+      .from("invoice_bookings")
+      .select("bookings(id, booking_code, total_amount, amount_paid, balance_due)")
+      .eq("invoice_id", id),
   ]);
 
-  const booking = rel(
-    invoice.bookings as
-      | { id: string; booking_code: string; total_amount: number; amount_paid: number; balance_due: number }
-      | { id: string; booking_code: string; total_amount: number; amount_paid: number; balance_due: number }[]
-      | null,
-  );
+  const primary = rel(invoice.bookings as BookingRef | BookingRef[] | null);
+  const linked = (links || [])
+    .map((l) => rel(l.bookings as BookingRef | BookingRef[] | null))
+    .filter((b): b is BookingRef => !!b);
+  const billed = linked.length ? linked : primary ? [primary] : [];
+  const sumOf = (f: (b: BookingRef) => number) => billed.reduce((s, b) => s + f(b), 0);
+  const booking = billed.length
+    ? {
+        total_amount: sumOf((b) => Number(b.total_amount)),
+        amount_paid: sumOf((b) => Number(b.amount_paid)),
+        balance_due: sumOf((b) => Number(b.balance_due)),
+      }
+    : null;
   const creditedTaxable = (credits || []).reduce((s, c) => s + Number(c.taxable_value), 0);
   const remaining = Math.max(Number(invoice.taxable_value) - creditedTaxable, 0);
   const isGst = invoice.invoice_type === "gst";
@@ -63,8 +77,11 @@ export default async function InvoiceDetailPage({
             <Link href="/invoices" className={btnSoft}>
               Register
             </Link>
-            <a href={`/print/invoices/${id}`} target="_blank" rel="noreferrer" className={btnPrimary}>
-              Print / save as PDF
+            <a href={`/print/invoices/${id}/pdf`} className={btnPrimary}>
+              Download PDF
+            </a>
+            <a href={`/print/invoices/${id}`} target="_blank" rel="noreferrer" className={btnSoft}>
+              Print
             </a>
           </>
         }
@@ -100,33 +117,29 @@ export default async function InvoiceDetailPage({
       <div className="grid gap-4 lg:grid-cols-3">
         <Panel className="lg:col-span-2">
           <h3 className="mb-3 font-semibold">Items</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-[var(--muted)]">
-                <tr>
-                  <th className="py-2 font-medium">Description</th>
-                  <th className="text-right font-medium">Qty</th>
-                  <th className="text-right font-medium">Rate</th>
-                  <th className="text-right font-medium">Amount</th>
-                  {isGst ? <th className="text-right font-medium">GST %</th> : null}
-                </tr>
-              </thead>
-              <tbody>
-                {(items || []).map((it) => (
-                  <tr key={it.id} className="border-t border-[var(--line)]">
-                    <td className="py-2">
-                      {it.description}
-                      {isGst && it.sac_code ? <span className="ml-2 text-xs text-[var(--muted)]">SAC {it.sac_code}</span> : null}
-                    </td>
-                    <td className="text-right">{it.quantity}</td>
-                    <td className="text-right">{formatMoney(it.unit_amount)}</td>
-                    <td className="text-right">{formatMoney(it.amount)}</td>
-                    {isGst ? <td className="text-right">{it.tax_rate}%</td> : null}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            searchable={false}
+            pageSize={100}
+            columns={[
+              { header: "Description", maxWidth: "26rem" },
+              ...(isGst ? [{ header: "SAC" }] : []),
+              { header: "Qty", align: "right" as const },
+              { header: "Rate", align: "right" as const },
+              { header: "Amount", align: "right" as const },
+              ...(isGst ? [{ header: "GST %", align: "right" as const }] : []),
+            ]}
+            rows={(items || []).map((it) => ({
+              key: it.id,
+              cells: [
+                it.description,
+                ...(isGst ? [it.sac_code || "—"] : []),
+                it.quantity,
+                formatMoney(it.unit_amount),
+                formatMoney(it.amount),
+                ...(isGst ? [`${it.tax_rate}%`] : []),
+              ],
+            }))}
+          />
           <dl className="ml-auto mt-4 max-w-sm space-y-1 text-sm">
             <div className="flex justify-between">
               <dt className="text-[var(--muted)]">Taxable value</dt>
@@ -151,7 +164,7 @@ export default async function InvoiceDetailPage({
           <h3 className="mb-3 font-semibold">Details</h3>
           <dl className="space-y-2 text-sm">
             {[
-              ["Booking", booking?.booking_code],
+              [billed.length > 1 ? "Bookings" : "Booking", billed.map((b) => b.booking_code).join(", ")],
               ["Billed to", invoice.billing_name],
               ["Customer GSTIN", invoice.customer_gstin || "—"],
               ["Hotel GSTIN", invoice.hotel_gstin || "—"],
@@ -166,14 +179,18 @@ export default async function InvoiceDetailPage({
           </dl>
           {booking ? (
             <div className="mt-4 rounded-2xl bg-[var(--brand-tint)] p-3 text-sm">
-              <div className="flex justify-between"><span className="text-[var(--muted)]">Booking total</span><span>{formatMoney(booking.total_amount)}</span></div>
+              <div className="flex justify-between"><span className="text-[var(--muted)]">{billed.length > 1 ? "Bookings total" : "Booking total"}</span><span>{formatMoney(booking.total_amount)}</span></div>
               <div className="flex justify-between"><span className="text-[var(--muted)]">Paid</span><span>{formatMoney(booking.amount_paid)}</span></div>
               <div className="flex justify-between font-semibold"><span>Balance due</span><span>{formatMoney(booking.balance_due)}</span></div>
-              {Number(booking.balance_due) > 0 && invoice.status !== "voided" ? (
-                <Link href={`/payments/new?booking_id=${booking.id}`} className="mt-2 inline-block text-xs font-medium text-[var(--brand)] hover:underline">
-                  Record payment
-                </Link>
-              ) : null}
+              {invoice.status !== "voided"
+                ? billed
+                    .filter((b) => Number(b.balance_due) > 0)
+                    .map((b) => (
+                      <Link key={b.id} href={`/payments/new?booking_id=${b.id}`} className="mt-2 block text-xs font-medium text-[var(--brand)] hover:underline">
+                        Record payment{billed.length > 1 ? ` for ${b.booking_code}` : ""}
+                      </Link>
+                    ))
+                : null}
             </div>
           ) : null}
           {invoice.notes ? <p className="mt-3 rounded-xl bg-stone-50 p-3 text-sm">{invoice.notes}</p> : null}

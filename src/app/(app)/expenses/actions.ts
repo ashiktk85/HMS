@@ -88,6 +88,31 @@ export async function reverseExpense(formData: FormData): Promise<Result> {
   return { ok: true };
 }
 
+/** Adds a category from inside another form (e.g. New expense) and returns it so the form can select it. */
+export async function addExpenseCategory(
+  name: string,
+): Promise<{ ok: true; id: string; name: string } | { error: string }> {
+  const session = await requireUser();
+  if (!canAccessSettings(session.role)) {
+    return { error: "Only the owner or a manager can add expense categories." };
+  }
+  const clean = String(name || "").trim();
+  if (!clean) return { error: "Enter a category name" };
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("expense_categories")
+    .insert({ name: clean, is_active: true })
+    .select("id, name")
+    .single();
+  if (error) {
+    return { error: error.code === "23505" ? `A category named "${clean}" already exists` : error.message };
+  }
+  await writeAudit("create", "expense_categories", data.id, { name: clean });
+  revalidatePath("/settings");
+  revalidatePath("/expenses/new");
+  return { ok: true, id: data.id, name: data.name };
+}
+
 export async function saveExpenseCategory(formData: FormData): Promise<Result> {
   const session = await requireUser();
   if (!canAccessSettings(session.role)) {

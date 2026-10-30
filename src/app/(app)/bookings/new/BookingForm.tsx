@@ -17,27 +17,27 @@ const STATE_STYLE: Record<RoomState, { label: string; card: string; badge: strin
   },
   booked: {
     label: "Booked",
-    card: "border-blue-200 bg-blue-50",
-    badge: "bg-blue-600 text-white",
-    dot: "bg-blue-500",
+    card: "border-violet-200 bg-violet-50",
+    badge: "bg-violet-600 text-white",
+    dot: "bg-violet-500",
   },
   hold: {
     label: "On hold",
-    card: "border-amber-300 bg-amber-50",
-    badge: "bg-amber-500 text-white",
-    dot: "bg-amber-500",
-  },
-  occupied: {
-    label: "Occupied",
-    card: "border-rose-200 bg-rose-50",
+    card: "border-rose-300 bg-rose-50",
     badge: "bg-rose-600 text-white",
     dot: "bg-rose-500",
   },
+  occupied: {
+    label: "Occupied",
+    card: "border-sky-200 bg-sky-50",
+    badge: "bg-sky-600 text-white",
+    dot: "bg-sky-500",
+  },
   maintenance: {
     label: "Maintenance",
-    card: "border-stone-300 bg-stone-100",
-    badge: "bg-stone-500 text-white",
-    dot: "bg-stone-400",
+    card: "border-orange-300 bg-orange-50",
+    badge: "bg-orange-500 text-white",
+    dot: "bg-orange-500",
   },
   blocked: {
     label: "Blocked",
@@ -135,7 +135,9 @@ export function BookingForm({
   defaultCheckOut,
   defaultGuestId,
   defaultRoomId,
+  methods,
 }: {
+  methods: { id: string; name: string; requires_reference: boolean }[];
   guests: GuestOption[];
   rooms: RoomInfo[];
   today: string;
@@ -169,6 +171,9 @@ export function BookingForm({
   const [additional, setAdditional] = useState("0");
   const [adults, setAdults] = useState("1");
   const [children, setChildren] = useState("0");
+  const [advance, setAdvance] = useState("");
+  const [methodId, setMethodId] = useState(methods[0]?.id ?? "");
+  const method = methods.find((m) => m.id === methodId);
 
   const room = rooms.find((r) => r.id === roomId);
   const roomTotal = cents(Number(rate || 0) * nights);
@@ -176,6 +181,9 @@ export function BookingForm({
     cents(roomTotal + Number(extraBed || 0) + Number(additional || 0) - Number(discount || 0)),
     0,
   );
+  const advanceAmt = cents(Number(advance || 0));
+  const advanceTooHigh = advanceAmt > total;
+  const balance = Math.max(cents(total - advanceAmt), 0);
   const guestCount = Number(adults || 0) + Number(children || 0);
   const overCapacity = room && guestCount > room.max_occupancy;
 
@@ -264,7 +272,7 @@ export function BookingForm({
             role="dialog"
             aria-modal="true"
             aria-label={`Book room ${room.room_number}`}
-            className="relative flex h-full w-full max-w-xl flex-col overflow-y-auto bg-[var(--panel)] p-5 shadow-xl"
+            className="relative flex h-full w-full max-w-3xl flex-col overflow-y-auto bg-[var(--panel)] p-5 shadow-xl"
           >
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
@@ -319,11 +327,10 @@ export function BookingForm({
 
         <Field
           label="Booking status"
-          hint="Enquiry and Hold are tentative. Confirm once an advance is received."
+          hint="New bookings start On hold. Confirm once an advance is received."
         >
-          <select name="status" defaultValue="confirmed" className={inputCls}>
-            <option value="enquiry">Enquiry (not held, can be taken by others)</option>
-            <option value="hold">Hold (room is held for this guest)</option>
+          <select name="status" defaultValue="hold" className={inputCls}>
+            <option value="hold">On hold (room is held for this guest)</option>
             <option value="confirmed">Confirmed</option>
           </select>
         </Field>
@@ -366,13 +373,73 @@ export function BookingForm({
           <textarea name="notes" rows={2} className={inputCls} />
         </Field>
 
+        <fieldset className="grid gap-3 rounded-2xl border border-[var(--line)] p-4 sm:grid-cols-2 md:col-span-2">
+          <legend className="px-1 text-sm font-semibold">Advance payment (optional)</legend>
+          <Field
+            label="Advance received (₹)"
+            hint={advanceTooHigh ? "More than the booking total" : "Leave empty if no advance was taken"}
+          >
+            <input
+              type="number"
+              name="advance_amount"
+              min="0"
+              max={total}
+              step="0.01"
+              value={advance}
+              onChange={(e) => setAdvance(e.target.value)}
+              placeholder="0"
+              className={inputCls}
+            />
+          </Field>
+          <Field label="Paid by">
+            <select
+              name="advance_method_id"
+              value={methodId}
+              onChange={(e) => setMethodId(e.target.value)}
+              required={advanceAmt > 0}
+              className={inputCls}
+            >
+              {methods.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+          </Field>
+          {advanceAmt > 0 ? (
+            <Field
+              label={method?.requires_reference ? "Transaction reference (required)" : "Transaction reference (optional)"}
+              hint="UPI ID / UTR / card approval code"
+              className="sm:col-span-2"
+            >
+              <input name="advance_reference" required={method?.requires_reference} className={inputCls} />
+            </Field>
+          ) : null}
+          {advanceAmt > 0 ? (
+            <p className="rounded-xl bg-[var(--brand-tint)] px-3 py-2 text-xs text-[var(--brand)] sm:col-span-2">
+              Receiving an advance confirms the booking and a receipt is created.
+            </p>
+          ) : null}
+        </fieldset>
+
         <div className="rounded-2xl bg-[var(--brand-tint)] p-4 md:col-span-2">
-          <div className="flex flex-wrap items-end justify-between gap-2 text-sm">
-            <span className="text-[var(--muted)]">
-              {nights} night{nights === 1 ? "" : "s"} × {inr.format(Number(rate || 0))} = {inr.format(roomTotal)}
-            </span>
-            <span className="text-lg font-semibold">Total {inr.format(total)}</span>
-          </div>
+          <p className="text-xs text-[var(--muted)]">
+            {nights} night{nights === 1 ? "" : "s"} × {inr.format(Number(rate || 0))} = {inr.format(roomTotal)}
+          </p>
+          <dl className="mt-2 space-y-1 text-sm">
+            <div className="flex justify-between">
+              <dt className="text-[var(--muted)]">Total</dt>
+              <dd className="font-medium">{inr.format(total)}</dd>
+            </div>
+            {advanceAmt > 0 ? (
+              <div className="flex justify-between">
+                <dt className="text-[var(--muted)]">Advance paid</dt>
+                <dd className="font-medium text-emerald-700">− {inr.format(advanceAmt)}</dd>
+              </div>
+            ) : null}
+            <div className="flex justify-between border-t border-black/10 pt-2 text-lg font-semibold">
+              <dt>Balance to pay</dt>
+              <dd>{inr.format(balance)}</dd>
+            </div>
+          </dl>
           <p className="mt-1 text-xs text-[var(--muted)]">
             The final amount is calculated again on the server when you save.
           </p>

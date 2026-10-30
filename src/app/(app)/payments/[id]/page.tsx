@@ -12,7 +12,7 @@ import {
 import { ActionForm, SubmitButton } from "@/components/ActionForm";
 import { getSessionProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { canAccessSettings, formatDate, formatMoney, labelize, rel } from "@/lib/types";
+import { bookingLabel, canAccessSettings, formatDate, formatMoney, labelize, rel } from "@/lib/types";
 import { notFound } from "next/navigation";
 import { requestRefund, voidPayment } from "../actions";
 
@@ -123,7 +123,7 @@ export default async function PaymentDetailPage({
                 <Link href={`/bookings/${booking.id}`} className="text-[var(--brand)] hover:underline">
                   {booking.booking_code}
                 </Link>{" "}
-                <span className="font-normal text-[var(--muted)]">({labelize(booking.status)})</span>
+                <span className="font-normal text-[var(--muted)]">({bookingLabel(booking.status)})</span>
               </p>
               <div className="flex justify-between">
                 <span className="text-[var(--muted)]">Booking total</span>

@@ -1,8 +1,9 @@
 "use client";
 
-import { PageHeader, Panel, inputCls, btnPrimary } from "@/components/ui";
+import { PageHeader, Panel, inputCls, btnPrimary, mobileProps } from "@/components/ui";
+import { restoreFormValues } from "@/components/ActionForm";
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useLayoutEffect, useRef, useState, useTransition } from "react";
 import { createGuest, type DuplicateGuest } from "../actions";
 
 const FIELDS: [name: string, label: string, required?: boolean][] = [
@@ -20,9 +21,23 @@ export default function NewGuestPage() {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [dupes, setDupes] = useState<DuplicateGuest[]>([]);
+  const [failures, setFailures] = useState(0);
+  const formRef = useRef<HTMLFormElement>(null);
+  const submitted = useRef<FormData | null>(null);
+
+  // The form is cleared after every submit; put the typed values back when it failed.
+  useLayoutEffect(() => {
+    const form = formRef.current;
+    const data = submitted.current;
+    if (!failures || !form || !data) return;
+    restoreFormValues(form, data);
+    const t = setTimeout(() => restoreFormValues(form, data), 0);
+    return () => clearTimeout(t);
+  }, [failures]);
 
   function submit(formData: FormData, force = false) {
     if (force) formData.set("force", "1");
+    submitted.current = formData;
     setError(null);
     start(async () => {
       // On success the action redirects; only failures come back here.
@@ -35,6 +50,7 @@ export default function NewGuestPage() {
           setDupes([]);
           setError(String(res.error));
         }
+        setFailures((n) => n + 1);
       }
     });
   }
@@ -50,7 +66,7 @@ export default function NewGuestPage() {
         }
       />
       <Panel>
-        <form action={(fd) => submit(fd, false)} className="grid gap-3 md:grid-cols-2">
+        <form ref={formRef} action={(fd) => submit(fd, false)} className="grid gap-3 md:grid-cols-2">
           {FIELDS.map(([name, label, required]) => (
             <label key={name} className="text-sm">
               <span className="text-[var(--muted)]">{label}</span>
@@ -59,6 +75,14 @@ export default function NewGuestPage() {
                 required={!!required}
                 defaultValue={name === "nationality" ? "Indian" : ""}
                 className={`${inputCls} mt-1`}
+                {...(name === "mobile" ? mobileProps : {})}
+                {...(name === "mobile"
+                  ? {
+                      onInput: (e: React.FormEvent<HTMLInputElement>) => {
+                        e.currentTarget.value = e.currentTarget.value.replace(/\D/g, "").slice(0, 10);
+                      },
+                    }
+                  : {})}
               />
             </label>
           ))}
@@ -67,7 +91,7 @@ export default function NewGuestPage() {
             <textarea name="notes" className={`${inputCls} mt-1`} rows={3} />
           </label>
           {error ? (
-            <p role="alert" className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800 md:col-span-2">
+            <p role="alert" className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-800 md:col-span-2">
               {error}
             </p>
           ) : null}

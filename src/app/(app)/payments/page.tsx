@@ -10,6 +10,7 @@ import {
 } from "@/components/ui";
 import { ActionForm, SubmitButton } from "@/components/ActionForm";
 import { getSessionProfile } from "@/lib/auth";
+import { DataTable } from "@/components/DataTable";
 import { createClient } from "@/lib/supabase/server";
 import { canAccessSettings, formatDate, formatMoney, labelize, rel } from "@/lib/types";
 import { decideRefund } from "./actions";
@@ -111,48 +112,60 @@ export default async function PaymentsPage({
         {!payments?.length ? (
           <EmptyState message={term || method ? "No payments match." : "No payments yet."} />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-[var(--muted)]">
-                <tr>
-                  <th className="py-2 font-medium">Receipt</th>
-                  <th className="font-medium">Booking / guest</th>
-                  <th className="font-medium">Amount</th>
-                  <th className="font-medium">Method</th>
-                  <th className="font-medium">Reference</th>
-                  <th className="font-medium">Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {payments.map((p) => {
-                  const b = rel(
-                    p.bookings as
-                      | { booking_code: string; guests: { full_name: string } | { full_name: string }[] | null }
-                      | { booking_code: string; guests: { full_name: string } | { full_name: string }[] | null }[]
-                      | null,
-                  );
-                  return (
-                    <tr key={p.id} className="border-t border-[var(--line)]">
-                      <td className="py-3">
-                        <Link href={`/payments/${p.id}`} className="font-medium text-[var(--brand)] hover:underline">
-                          {p.receipt_no}
-                        </Link>
-                        {p.voided ? <span className="ml-2"><StatusPill tone="danger">Voided</StatusPill></span> : null}
-                      </td>
-                      <td>
-                        {b?.booking_code}
-                        <span className="block text-xs text-[var(--muted)]">{rel(b?.guests ?? null)?.full_name}</span>
-                      </td>
-                      <td className={p.voided ? "text-[var(--muted)] line-through" : ""}>{formatMoney(p.amount)}</td>
-                      <td>{p.method}</td>
-                      <td>{p.reference || "—"}</td>
-                      <td className="whitespace-nowrap">{formatDate(p.received_at)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            searchable={false}
+            columns={[
+              { header: "Receipt" },
+              { header: "Booking" },
+              { header: "Guest", maxWidth: "14rem" },
+              { header: "Amount", align: "right" },
+              { header: "Method" },
+              { header: "Reference", maxWidth: "12rem" },
+              { header: "Date" },
+              { header: "Status" },
+            ]}
+            rows={payments.map((p) => {
+              const b = rel(
+                p.bookings as
+                  | { booking_code: string; guests: { full_name: string } | { full_name: string }[] | null }
+                  | { booking_code: string; guests: { full_name: string } | { full_name: string }[] | null }[]
+                  | null,
+              );
+              return {
+                key: p.id,
+                details: {
+                  title: p.receipt_no,
+                  subtitle: `${b?.booking_code ?? ""} · ${rel(b?.guests ?? null)?.full_name ?? ""}`,
+                  fields: [
+                    { label: "Amount", value: formatMoney(p.amount) },
+                    { label: "Status", value: p.voided ? "Voided" : "Received" },
+                    { label: "Method", value: p.method },
+                    { label: "Reference", value: p.reference },
+                    { label: "Booking", value: b?.booking_code },
+                    { label: "Guest", value: rel(b?.guests ?? null)?.full_name },
+                    { label: "Received", value: formatDate(p.received_at) },
+                    ...(p.voided ? [{ label: "Void reason", value: p.void_reason, wide: true }] : []),
+                    { label: "Notes", value: p.notes, wide: true },
+                  ],
+                  actions: (
+                    <Link href={`/payments/${p.id}`} className={btnPrimary}>Open receipt</Link>
+                  ),
+                },
+                cells: [
+                  <Link key="r" href={`/payments/${p.id}`} className="font-medium text-[var(--brand)] hover:underline">
+                    {p.receipt_no}
+                  </Link>,
+                  b?.booking_code,
+                  rel(b?.guests ?? null)?.full_name,
+                  <span key="a" className={p.voided ? "text-[var(--muted)] line-through" : "font-medium"}>{formatMoney(p.amount)}</span>,
+                  p.method,
+                  p.reference || "—",
+                  formatDate(p.received_at),
+                  p.voided ? <StatusPill key="v" tone="danger">Voided</StatusPill> : <StatusPill key="v" tone="ok">Received</StatusPill>,
+                ],
+              };
+            })}
+          />
         )}
       </Panel>
 

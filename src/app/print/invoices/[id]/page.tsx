@@ -3,6 +3,7 @@ import { formatDate, formatMoney, labelize, rel } from "@/lib/types";
 import { amountInWords } from "@/lib/words";
 import { PrintButton } from "@/components/PrintButton";
 import { notFound } from "next/navigation";
+import { advanceLabel, loadInvoiceDocument } from "@/lib/invoice-data";
 
 export default async function InvoicePrintPage({
   params,
@@ -11,37 +12,24 @@ export default async function InvoicePrintPage({
 }) {
   const { id } = await params;
   const supabase = await createClient();
-  const { data: invoice } = await supabase
-    .from("invoices")
-    .select("*, bookings(booking_code, check_in_date, check_out_date, rooms(room_number))")
-    .eq("id", id)
-    .maybeSingle();
-  if (!invoice) notFound();
-
-  const [{ data: items }, { data: taxes }, { data: credits }, { data: settings }] = await Promise.all([
-    supabase.from("invoice_items").select("*").eq("invoice_id", id),
-    supabase.from("tax_details").select("*").eq("invoice_id", id).order("tax_name"),
-    supabase.from("credit_notes").select("*").eq("invoice_id", id).order("created_at"),
-    supabase.from("hotel_settings").select("*").limit(1).maybeSingle(),
-  ]);
-
-  type Booking = {
-    booking_code: string;
-    check_in_date: string;
-    check_out_date: string;
-    rooms: { room_number: string } | { room_number: string }[] | null;
-  };
-  const booking = rel(invoice.bookings as Booking | Booking[] | null);
-  const room = rel(booking?.rooms ?? null);
-  const isGst = invoice.invoice_type === "gst";
-  const title = invoice.status === "voided" ? "INVOICE (VOID)" : isGst ? "TAX INVOICE" : "BILL OF SUPPLY / INVOICE";
+  const doc = await loadInvoiceDocument(supabase, id);
+  if (!doc) notFound();
+  const { invoice, items, taxes, credits, settings, paid, balanceDue, stays, isGst, title } = doc;
 
   return (
     <div className="min-h-screen bg-white p-8 text-black">
       <div className="mx-auto max-w-3xl text-sm">
         <div className="no-print mb-6 flex items-center justify-between">
-          <p className="text-xs text-stone-500">Use Print, then choose “Save as PDF” to download a PDF.</p>
-          <PrintButton />
+          <p className="text-xs text-stone-500">Download a PDF, or print this page.</p>
+          <div className="flex gap-2">
+            <a
+              href={`/print/invoices/${id}/pdf`}
+              className="rounded-xl bg-[var(--brand)] px-4 py-2 text-sm font-medium text-white"
+            >
+              Download PDF
+            </a>
+            <PrintButton />
+          </div>
         </div>
 
         {invoice.status === "voided" ? (
@@ -62,7 +50,9 @@ export default async function InvoicePrintPage({
             <p className="text-lg font-semibold">{title}</p>
             <p className="font-medium">{invoice.invoice_number}</p>
             <p>Date: {formatDate(invoice.issued_at)}</p>
-            <p>Booking: {booking?.booking_code}</p>
+            <p>
+              {stays.length > 1 ? "Bookings" : "Booking"}: {stays.map((s) => s.booking_code).join(", ")}
+            </p>
           </div>
         </div>
 
@@ -74,11 +64,13 @@ export default async function InvoicePrintPage({
             {isGst && invoice.customer_gstin ? <p>GSTIN: {invoice.customer_gstin}</p> : null}
           </div>
           <div>
-            <p className="text-xs uppercase text-stone-500">Stay</p>
-            <p>
-              {booking?.check_in_date} to {booking?.check_out_date}
-              {room ? ` · Room ${room.room_number}` : ""}
-            </p>
+            <p className="text-xs uppercase text-stone-500">{stays.length > 1 ? "Stays" : "Stay"}</p>
+            {stays.map((s) => (
+              <p key={s.booking_code}>
+                {s.check_in_date} to {s.check_out_date}
+                {rel(s.rooms) ? ` · Room ${rel(s.rooms)!.room_number}` : ""}
+              </p>
+            ))}
             {isGst ? (
               <p>Supply: {invoice.is_inter_state ? "Inter-state (IGST)" : "Intra-state (CGST + SGST)"}</p>
             ) : null}
@@ -97,7 +89,7 @@ export default async function InvoicePrintPage({
             </tr>
           </thead>
           <tbody>
-            {(items || []).map((it) => (
+            {items.map((it) => (
               <tr key={it.id} className="border-b border-stone-200">
                 <td className="py-2">{it.description}</td>
                 {isGst ? <td>{it.sac_code || ""}</td> : null}
@@ -115,7 +107,7 @@ export default async function InvoicePrintPage({
             <dt>{isGst ? "Taxable value" : "Sub-total"}</dt>
             <dd>{formatMoney(invoice.taxable_value)}</dd>
           </div>
-          {(taxes || []).map((t) => (
+          {taxes.map((t) => (
             <div key={t.id} className="flex justify-between">
               <dt>
                 {t.tax_name} @ {t.rate}%
@@ -127,10 +119,24 @@ export default async function InvoicePrintPage({
             <dt>Total</dt>
             <dd>{formatMoney(invoice.total_amount)}</dd>
           </div>
+          {paid.map((p) => (
+            <div key={p.id} className="flex justify-between text-emerald-800">
+              <dt>
+                {advanceLabel(p)} · {formatDate(p.received_at)} · {p.method}
+              </dt>
+              <dd>− {formatMoney(p.amount)}</dd>
+            </div>
+          ))}
+          {paid.length ? (
+            <div className="flex justify-between border-t border-stone-400 pt-2 text-base font-semibold">
+              <dt>{balanceDue > 0 ? "Balance due" : "Balance due (fully paid)"}</dt>
+              <dd>{formatMoney(balanceDue)}</dd>
+            </div>
+          ) : null}
         </dl>
         <p className="mt-3 text-xs">{amountInWords(Number(invoice.total_amount))}</p>
 
-        {credits?.length ? (
+        {credits.length ? (
           <div className="mt-6 border-t border-stone-300 pt-3 text-xs">
             <p className="font-semibold uppercase">Credit notes against this invoice</p>
             {credits.map((c) => (

@@ -8,6 +8,7 @@ import {
   btnPrimary,
   btnSoft,
 } from "@/components/ui";
+import { DataTable } from "@/components/DataTable";
 import { createClient } from "@/lib/supabase/server";
 import { formatDate, formatMoney, labelize, rel } from "@/lib/types";
 
@@ -85,45 +86,62 @@ export default async function InvoicesPage({
         {!invoices?.length ? (
           <EmptyState message={term || type || status ? "No invoices match." : "No invoices yet."} />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-[var(--muted)]">
-                <tr>
-                  <th className="py-2 font-medium">Invoice</th>
-                  <th className="font-medium">Billed to</th>
-                  <th className="font-medium">Booking</th>
-                  <th className="font-medium">Date</th>
-                  <th className="text-right font-medium">Taxable</th>
-                  <th className="text-right font-medium">GST</th>
-                  <th className="text-right font-medium">Total</th>
-                  <th className="font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {invoices.map((i) => (
-                  <tr key={i.id} className="border-t border-[var(--line)]">
-                    <td className="py-3">
-                      <Link href={`/invoices/${i.id}`} className="font-medium text-[var(--brand)] hover:underline">
-                        {i.invoice_number}
-                      </Link>
-                      <span className="block text-xs text-[var(--muted)]">{labelize(i.invoice_type)}</span>
-                    </td>
-                    <td>{i.billing_name ?? rel(i.guests as { full_name: string } | { full_name: string }[] | null)?.full_name}</td>
-                    <td>{rel(i.bookings as { booking_code: string } | { booking_code: string }[] | null)?.booking_code}</td>
-                    <td className="whitespace-nowrap">{formatDate(i.issued_at)}</td>
-                    <td className="text-right">{formatMoney(i.taxable_value)}</td>
-                    <td className="text-right">
-                      {formatMoney(Number(i.cgst_amount) + Number(i.sgst_amount) + Number(i.igst_amount))}
-                    </td>
-                    <td className="text-right font-medium">{formatMoney(i.total_amount)}</td>
-                    <td>
-                      <StatusPill tone={statusTone(i.status)}>{labelize(i.status)}</StatusPill>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            searchable={false}
+            columns={[
+              { header: "Invoice" },
+              { header: "Type" },
+              { header: "Billed to", maxWidth: "16rem" },
+              { header: "Booking" },
+              { header: "Date" },
+              { header: "Taxable", align: "right" },
+              { header: "GST", align: "right" },
+              { header: "Total", align: "right" },
+              { header: "Status" },
+            ]}
+            rows={invoices.map((i) => ({
+              key: i.id,
+              details: {
+                title: i.invoice_number,
+                subtitle: `${labelize(i.invoice_type)} invoice · ${labelize(i.status)}`,
+                fields: [
+                  { label: "Billed to", value: i.billing_name ?? rel(i.guests as { full_name: string } | { full_name: string }[] | null)?.full_name },
+                  { label: "Booking", value: rel(i.bookings as { booking_code: string } | { booking_code: string }[] | null)?.booking_code },
+                  { label: "Issued", value: formatDate(i.issued_at) },
+                  { label: "Financial year", value: i.fiscal_year },
+                  { label: "Customer GSTIN", value: i.customer_gstin },
+                  { label: "Supply", value: i.invoice_type === "gst" ? (i.is_inter_state ? "Other state (IGST)" : "Same state (CGST + SGST)") : null },
+                  { label: "Taxable value", value: formatMoney(i.taxable_value) },
+                  { label: "CGST", value: formatMoney(i.cgst_amount) },
+                  { label: "SGST", value: formatMoney(i.sgst_amount) },
+                  { label: "IGST", value: formatMoney(i.igst_amount) },
+                  { label: "Total", value: formatMoney(i.total_amount) },
+                  { label: "Billing address", value: i.billing_address, wide: true },
+                  { label: "Note", value: i.notes, wide: true },
+                  ...(i.status === "voided" ? [{ label: "Void reason", value: i.void_reason, wide: true }] : []),
+                ],
+                actions: (
+                  <>
+                    <Link href={`/invoices/${i.id}`} className={btnPrimary}>Open invoice</Link>
+                    <a href={`/print/invoices/${i.id}/pdf`} className={btnSoft}>Download PDF</a>
+                  </>
+                ),
+              },
+              cells: [
+                <Link key="n" href={`/invoices/${i.id}`} className="font-medium text-[var(--brand)] hover:underline">
+                  {i.invoice_number}
+                </Link>,
+                labelize(i.invoice_type),
+                i.billing_name ?? rel(i.guests as { full_name: string } | { full_name: string }[] | null)?.full_name,
+                rel(i.bookings as { booking_code: string } | { booking_code: string }[] | null)?.booking_code,
+                formatDate(i.issued_at),
+                formatMoney(i.taxable_value),
+                formatMoney(Number(i.cgst_amount) + Number(i.sgst_amount) + Number(i.igst_amount)),
+                <span key="t" className="font-medium">{formatMoney(i.total_amount)}</span>,
+                <StatusPill key="s" tone={statusTone(i.status)}>{labelize(i.status)}</StatusPill>,
+              ],
+            }))}
+          />
         )}
       </Panel>
     </div>

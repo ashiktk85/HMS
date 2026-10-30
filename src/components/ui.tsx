@@ -1,5 +1,14 @@
 export const inputCls =
   "w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm";
+/** Props for a 10-digit mobile number input. */
+export const mobileProps = {
+  type: "tel",
+  inputMode: "numeric",
+  maxLength: 10,
+  pattern: "[0-9]{10}",
+  title: "Enter a 10-digit mobile number",
+  placeholder: "10-digit mobile number",
+} as const;
 export const btnPrimary =
   "rounded-xl bg-[var(--brand)] px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:opacity-60";
 export const btnSoft =
@@ -52,7 +61,7 @@ export function StatusPill({
   tone = "neutral",
 }: {
   children: React.ReactNode;
-  tone?: "neutral" | "ok" | "warn" | "danger" | "info";
+  tone?: "neutral" | "ok" | "warn" | "danger" | "info" | "orange" | "violet";
 }) {
   const tones = {
     neutral: "bg-stone-100 text-stone-700",
@@ -60,6 +69,8 @@ export function StatusPill({
     warn: "bg-amber-50 text-amber-800",
     danger: "bg-rose-50 text-rose-800",
     info: "bg-sky-50 text-sky-800",
+    orange: "bg-orange-50 text-orange-700",
+    violet: "bg-violet-50 text-violet-700",
   };
   return (
     <span
@@ -75,7 +86,7 @@ export function Avatar({
   size = "md",
 }: {
   name: string;
-  size?: "md" | "lg";
+  size?: "sm" | "md" | "lg";
 }) {
   const text =
     name
@@ -84,7 +95,7 @@ export function Avatar({
       .slice(0, 2)
       .map((p) => p[0]?.toUpperCase())
       .join("") || "?";
-  const dims = size === "lg" ? "h-16 w-16 text-xl" : "h-9 w-9 text-xs";
+  const dims = size === "lg" ? "h-16 w-16 text-xl" : size === "sm" ? "h-6 w-6 text-[10px]" : "h-9 w-9 text-xs";
   return (
     <span
       className={`flex shrink-0 items-center justify-center rounded-full bg-[var(--brand-soft)] font-semibold text-[var(--brand)] ${dims}`}
@@ -104,10 +115,12 @@ export function EmptyState({ message }: { message: string }) {
 
 export function roomStatusTone(status: string) {
   if (status === "available") return "ok" as const;
-  if (status === "occupied" || status === "reserved") return "info" as const;
+  if (status === "reserved") return "danger" as const; // shown as "On hold"
+  if (status === "occupied") return "info" as const;
   if (status === "dirty" || status === "cleaning" || status === "inspection")
     return "warn" as const;
-  return "danger" as const;
+  if (status === "maintenance") return "orange" as const;
+  return "neutral" as const;
 }
 
 /** Labelled form control: visible label above, optional hint below. */

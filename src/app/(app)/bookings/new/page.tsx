@@ -26,7 +26,7 @@ export default async function NewBookingPage({
   const checkOut = hasDates ? sp.check_out! : addDays(today, 1);
 
   const supabase = await createClient();
-  const [{ data: allRooms }, { data: upcoming }, { data: guestRows }] = await Promise.all([
+  const [{ data: allRooms }, { data: upcoming }, { data: guestRows }, { data: methods }] = await Promise.all([
     supabase
       .from("rooms")
       .select("id, room_number, status, category, floor, base_rate, max_occupancy")
@@ -41,6 +41,11 @@ export default async function NewBookingPage({
       .gt("check_out_date", today)
       .order("check_in_date"),
     supabase.from("guests").select("id, full_name, mobile").order("full_name").limit(1000),
+    supabase
+      .from("payment_methods")
+      .select("id, name, requires_reference")
+      .eq("is_active", true)
+      .order("sort_order"),
   ]);
 
   const byRoom = new Map<string, Stay[]>();
@@ -80,6 +85,7 @@ export default async function NewBookingPage({
       <Panel>
         <BookingForm
           guests={guestRows || []}
+          methods={methods || []}
           rooms={rooms}
           today={today}
           defaultCheckIn={checkIn}

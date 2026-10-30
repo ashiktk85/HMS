@@ -28,25 +28,30 @@ export type BookingSource = "direct" | "walk_in" | "phone" | "whatsapp";
 
 export type InvoiceType = "gst" | "non_gst";
 
+/** Room statuses offered in the rooms screen. "inspection" and "blocked" are no longer used there. */
 export const ROOM_STATUSES: RoomStatus[] = [
   "available",
   "reserved",
   "occupied",
   "dirty",
   "cleaning",
-  "inspection",
   "maintenance",
-  "blocked",
 ];
 
+/** Display label for a room status, matching dashboard wording ("reserved" is shown as "On hold"). */
+export function roomLabel(status: string) {
+  if (status === "reserved") return "On hold";
+  if (status === "available") return "Rooms available";
+  return labelize(status);
+}
+
+/** Statuses offered for filtering/choosing. "enquiry" is legacy: no longer created or listed. */
 export const BOOKING_STATUSES: BookingStatus[] = [
-  "enquiry",
   "hold",
   "confirmed",
   "checked_in",
   "checked_out",
   "cancelled",
-  "no_show",
 ];
 
 export const ROLE_LABELS: Record<AppRole, string> = {
@@ -91,6 +96,11 @@ export function labelize(value: string) {
   return value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/** Display label for a booking status ("hold" is shown as "On hold"). */
+export function bookingLabel(status: string) {
+  return status === "hold" ? "On hold" : labelize(status);
+}
+
 /** Unwrap Supabase nested relation that may be object or array */
 export function rel<T>(value: T | T[] | null | undefined): T | null {
   if (value == null) return null;
@@ -100,11 +110,11 @@ export function rel<T>(value: T | T[] | null | undefined): T | null {
 /** Statuses a booking may move to from the booking screen. Check-in/out have their own actions. */
 export const BOOKING_TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
   enquiry: ["hold", "confirmed", "cancelled"],
-  hold: ["confirmed", "cancelled", "no_show"],
-  confirmed: ["cancelled", "no_show"],
+  hold: ["confirmed", "cancelled"],
+  confirmed: ["cancelled"],
   checked_in: [],
   checked_out: [],
-  cancelled: ["enquiry", "hold", "confirmed"],
+  cancelled: ["hold", "confirmed"],
   no_show: ["cancelled"],
 };
 
@@ -112,8 +122,9 @@ export const BOOKING_TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
 export const BLOCKING_BOOKING_STATUSES: BookingStatus[] = ["hold", "confirmed", "checked_in"];
 
 export function bookingTone(status: string) {
-  if (status === "confirmed" || status === "checked_in") return "ok" as const;
-  if (status === "enquiry" || status === "hold") return "info" as const;
+  if (status === "checked_in") return "info" as const;
+  if (status === "confirmed") return "violet" as const;
+  if (status === "enquiry" || status === "hold") return "danger" as const;
   if (status === "checked_out") return "neutral" as const;
   return "danger" as const;
 }
